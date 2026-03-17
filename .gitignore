@@ -13,6 +13,9 @@ env/
 # Environment variables
 .env
 
+# Local databases
+*.db
+
 # Flask instance and cache
 instance/
 .pytest_cache/
