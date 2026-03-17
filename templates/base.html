@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr" class="{% if ui_theme == 'dark' %}dark{% endif %}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eco-Share</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class"
+        };
+    </script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-orange-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
+    <header class="sticky top-0 z-40 border-b border-teal-200/60 bg-white/90 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+        <nav class="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-5 py-4">
+            <a href="{{ url_for('index') }}" class="text-xl font-black tracking-wide text-teal-700 dark:text-cyan-300">Eco-Share</a>
+            <div class="flex flex-wrap items-center gap-2 text-sm md:text-base">
+                {% if current_user.is_authenticated %}
+                    <form method="POST" action="{{ url_for('update_ui_settings') }}" class="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-800">
+                        <input type="hidden" name="next" value="{{ request.full_path }}">
+                        <select name="ui_theme" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-500 dark:bg-slate-700 dark:text-slate-100">
+                            <option value="light" {% if ui_theme == 'light' %}selected{% endif %}>Jour</option>
+                            <option value="dark" {% if ui_theme == 'dark' %}selected{% endif %}>Nuit</option>
+                        </select>
+                        <select name="ui_density" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-500 dark:bg-slate-700 dark:text-slate-100">
+                            <option value="comfortable" {% if ui_density == 'comfortable' %}selected{% endif %}>UI grande</option>
+                            <option value="compact" {% if ui_density == 'compact' %}selected{% endif %}>UI compacte</option>
+                        </select>
+                        <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-cyan-600">Sauver</button>
+                    </form>
+                    {% if current_user.role == 'admin' %}
+                        <a href="{{ url_for('admin_dashboard') }}" class="rounded-full border border-amber-500 px-4 py-2 font-semibold text-amber-700 dark:text-amber-300">
+                            Admin {% if new_reports_count > 0 %}({{ new_reports_count }}){% endif %}
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('logout') }}" class="rounded-full border border-slate-300 px-4 py-2 dark:border-slate-500">Se deconnecter</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="rounded-full border border-slate-300 px-4 py-2 dark:border-slate-500">Connexion</a>
+                    <a href="{{ url_for('register') }}" class="rounded-full bg-cyan-600 px-4 py-2 font-semibold text-white">Inscription</a>
+                {% endif %}
+            </div>
+        </nav>
+    </header>
+
+    <main class="mx-auto w-full max-w-screen-2xl px-5 py-8">
+        {% if current_user.is_authenticated %}
+            <div class="grid grid-cols-1 gap-6 xl:grid-cols-12">
+                <aside class="xl:col-span-3">
+                    <div class="sticky top-24 rounded-3xl border border-slate-200 bg-white p-4 shadow-md dark:border-slate-700 dark:bg-slate-900">
+                        <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Navigation</h2>
+                        {% set ep = request.endpoint or '' %}
+                        <div class="space-y-2">
+                            <a href="{{ url_for('index') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'index' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Accueil fiches</a>
+                            <a href="{{ url_for('upload') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'upload' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Faire une fiche</a>
+                            <a href="{{ url_for('my_resources') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'my_resources' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Mes fiches publiees</a>
+                            <a href="{{ url_for('account_settings') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep in ['account_settings', 'update_ui_settings', 'update_profile_photo', 'delete_account'] %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Settings compte</a>
+                            {% if current_user.role in ['admin', 'prof'] %}
+                                <a href="{{ url_for('admin_dashboard') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep in ['admin_dashboard', 'admin_close_report', 'admin_delete_resource', 'admin_import_demo', 'admin_sync_accounts', 'admin_create_prof', 'staff_delete_user'] %}bg-amber-500 text-white{% else %}border border-amber-400 text-amber-700 dark:text-amber-300{% endif %}">Console admin</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </aside>
+                <section class="xl:col-span-9">
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4 space-y-2">
+                    {% for category, message in messages %}
+                        <div class="rounded-2xl px-5 py-4 text-sm md:text-base {% if category == 'error' %}bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-200{% else %}bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200{% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+        {% if current_user.is_authenticated %}
+                </section>
+            </div>
+        {% endif %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# Flask instance and cache
+instance/
+.pytest_cache/
+.mypy_cache/
+
+# User-generated files
+static/uploads/*
+static/profiles/*
+!static/uploads/.gitkeep
+!static/profiles/.gitkeep
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/

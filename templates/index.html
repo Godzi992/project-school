@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="mb-0 rounded-3xl border border-teal-200 bg-white/85 p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900/80 md:p-8">
+    <h1 class="text-3xl font-black text-teal-800 dark:text-cyan-300 md:text-4xl">Commence par faire une fiche</h1>
+    <p class="mt-3 text-base text-slate-700 dark:text-slate-300 md:text-lg">Prends une photo de ton cours, ajoute la matiere et partage-la en 10 secondes avec ta classe.</p>
+
+    {% if current_user.is_authenticated %}
+        <div class="mt-5 flex flex-wrap items-center gap-3">
+            <a href="{{ url_for('upload') }}" class="rounded-2xl bg-teal-600 px-5 py-3 text-base font-bold text-white">Faire une fiche</a>
+            {% if current_user.role == 'eleve' %}
+                <span class="rounded-full bg-teal-100 px-4 py-1.5 text-sm font-semibold text-teal-800 dark:bg-cyan-900/40 dark:text-cyan-200">Interface classe {{ current_user.school_class }}</span>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="mt-5">
+            <a href="{{ url_for('login') }}" class="rounded-2xl bg-slate-900 px-5 py-3 text-base font-bold text-white dark:bg-cyan-600">Se connecter pour publier</a>
+        </div>
+    {% endif %}
+
+    <form method="GET" class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4 md:items-end">
+        <div class="w-full md:w-72">
+            <label for="classe" class="mb-2 block text-sm font-semibold">Filtrer par classe</label>
+            <select id="classe" name="classe" {% if class_locked %}disabled{% endif %} class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 {% if class_locked %}cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400{% endif %}">
+                <option value="all" {% if class_filter == 'all' %}selected{% endif %}>Toutes les classes</option>
+                {% for level in LEVELS %}
+                    <option value="{{ level }}" {% if class_filter == level %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+            </select>
+            {% if class_locked %}
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">En mode eleve, l'affichage est automatiquement filtre sur ta classe.</p>
+                <input type="hidden" name="classe" value="{{ current_user.school_class }}">
+            {% endif %}
+        </div>
+        <div>
+            <label for="matiere" class="mb-2 block text-sm font-semibold">Matiere</label>
+            <select id="matiere" name="matiere" class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                <option value="all" {% if subject_filter == 'all' %}selected{% endif %}>Toutes les matieres</option>
+                {% for subject in SUBJECTS %}
+                    <option value="{{ subject }}" {% if subject_filter == subject %}selected{% endif %}>{{ subject }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label for="q" class="mb-2 block text-sm font-semibold">Recherche</label>
+            <input id="q" name="q" value="{{ search_query }}" placeholder="nom du fichier..." class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+        </div>
+        <button type="submit" class="rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white dark:bg-cyan-600">Actualiser</button>
+    </form>
+</section>
+
+<section>
+    {% set image_height = 'h-64' if density == 'comfortable' else 'h-52' %}
+    {% set title_size = 'text-base' if density == 'comfortable' else 'text-sm' %}
+    {% if resources %}
+        <div class="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-md dark:border-slate-700 dark:bg-slate-900 md:block">
+            <div class="grid grid-cols-12 gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div class="col-span-2">Apercu</div>
+                <div class="col-span-3">Fichier</div>
+                <div class="col-span-2">Matiere</div>
+                <div class="col-span-1">Niveau</div>
+                <div class="col-span-2">Auteur</div>
+                <div class="col-span-2 text-right">Actions</div>
+            </div>
+            {% for resource in resources %}
+                <div class="grid grid-cols-12 gap-3 border-b border-slate-100 px-4 py-3 text-sm dark:border-slate-800">
+                    <div class="col-span-2">
+                        {% if resource.filetype in ['jpg', 'jpeg', 'png'] %}
+                            <img src="{{ url_for('static', filename='uploads/' + resource.filename) }}" alt="{{ resource.original_filename }}" class="h-20 w-full rounded-xl object-cover">
+                        {% else %}
+                            <div class="h-20 w-full rounded-xl bg-gradient-to-br from-cyan-100 to-teal-100 p-2 text-center text-xs font-semibold text-slate-700 dark:from-slate-800 dark:to-slate-700 dark:text-slate-100">PDF</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-span-3 min-w-0">
+                        <p class="truncate {{ title_size }} font-bold text-slate-800 dark:text-slate-100">{{ resource.original_filename }}</p>
+                    </div>
+                    <div class="col-span-2">
+                        <span class="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800">{{ resource.subject }}</span>
+                    </div>
+                    <div class="col-span-1 text-sm text-slate-700 dark:text-slate-300">{{ resource.level }}</div>
+                    <div class="col-span-2 text-sm text-slate-600 dark:text-slate-300">
+                        <div class="flex items-center gap-2">
+                            {% if profile_image_url(resource.uploaded_by) %}
+                                <img src="{{ profile_image_url(resource.uploaded_by) }}" alt="avatar" class="h-8 w-8 rounded-full object-cover">
+                            {% else %}
+                                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-100 text-xs font-bold text-cyan-700">{{ resource.uploaded_by.username[0]|upper }}</div>
+                            {% endif %}
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-semibold">{{ resource.uploaded_by.username }}</p>
+                                <p class="text-xs text-slate-500">{{ resource.uploaded_by.role }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-span-2 flex items-center justify-end gap-2">
+                        <a href="{{ url_for('static', filename='uploads/' + resource.filename) }}" target="_blank" class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-600">Ouvrir</a>
+                        {% if current_user.is_authenticated %}
+                            <form method="POST" action="{{ url_for('report_resource', resource_id=resource.id) }}">
+                                <button type="submit" class="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white">Signaler</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 md:hidden">
+            {% for resource in resources %}
+                <article class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-md dark:border-slate-700 dark:bg-slate-900">
+                    {% if resource.filetype in ['jpg', 'jpeg', 'png'] %}
+                        <img src="{{ url_for('static', filename='uploads/' + resource.filename) }}" alt="{{ resource.original_filename }}" class="{{ image_height }} w-full object-cover">
+                    {% else %}
+                        <div class="{{ image_height }} flex items-center justify-center bg-gradient-to-br from-cyan-100 to-teal-100 dark:from-slate-800 dark:to-slate-700">
+                            <span class="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-100">PDF</span>
+                        </div>
+                    {% endif %}
+
+                    <div class="space-y-3 p-5">
+                        <h2 class="truncate {{ title_size }} font-bold text-slate-800 dark:text-slate-100">{{ resource.original_filename }}</h2>
+                        <div class="flex flex-wrap gap-2 text-sm">
+                            <span class="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">{{ resource.subject }}</span>
+                            <span class="rounded-full bg-sky-100 px-2 py-1 text-sky-800">{{ resource.level }}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            {% if profile_image_url(resource.uploaded_by) %}
+                                <img src="{{ profile_image_url(resource.uploaded_by) }}" alt="avatar" class="h-8 w-8 rounded-full object-cover">
+                            {% else %}
+                                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-100 text-xs font-bold text-cyan-700">{{ resource.uploaded_by.username[0]|upper }}</div>
+                            {% endif %}
+                            <p class="text-sm text-slate-500 dark:text-slate-400">Ajoute par {{ resource.uploaded_by.username }} ({{ resource.uploaded_by.role }})</p>
+                        </div>
+
+                        <div class="flex items-center gap-2 pt-1">
+                            <a href="{{ url_for('static', filename='uploads/' + resource.filename) }}" target="_blank" class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-600">Ouvrir</a>
+                            {% if current_user.is_authenticated %}
+                                <form method="POST" action="{{ url_for('report_resource', resource_id=resource.id) }}">
+                                    <button type="submit" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white">Signaler</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-base text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+            Aucune ressource pour ce filtre.
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

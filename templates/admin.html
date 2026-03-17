@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="mb-6 rounded-3xl border border-amber-200 bg-white p-6 shadow-lg dark:border-slate-700 dark:bg-slate-900 md:p-7">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h1 class="text-3xl font-black text-amber-700 dark:text-amber-300">Console Staff</h1>
+            <p class="text-base text-slate-600 dark:text-slate-300">Observation, suppression de fiches et gestion des comptes.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% if current_user.role == 'admin' %}
+                <form method="POST" action="{{ url_for('admin_import_demo') }}">
+                    <button type="submit" class="rounded-2xl bg-amber-500 px-5 py-3 text-base font-bold text-white">Importer comptes demo</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_sync_accounts') }}">
+                    <button type="submit" class="rounded-2xl bg-cyan-600 px-5 py-3 text-base font-bold text-white">Synchroniser les comptes</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_clear_history') }}" onsubmit="return confirm('Confirmer la suppression de tout l\'historique ressources + signalements ?');">
+                    <button type="submit" class="rounded-2xl bg-rose-600 px-5 py-3 text-base font-bold text-white">Vider historique</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% if current_user.role == 'admin' %}
+<section class="mb-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+    <h2 class="mb-3 text-2xl font-bold">Historique synchronisation</h2>
+    {% if sync_logs %}
+        <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div class="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div class="col-span-2">ID</div>
+                <div class="col-span-3">Cree</div>
+                <div class="col-span-3">Mis a jour</div>
+                <div class="col-span-4">Par / Date</div>
+            </div>
+            {% for log in sync_logs %}
+                <div class="grid grid-cols-12 gap-2 border-b border-slate-100 px-3 py-2 text-sm dark:border-slate-800">
+                    <div class="col-span-2">#{{ log.id }}</div>
+                    <div class="col-span-3">{{ log.created_count }}</div>
+                    <div class="col-span-3">{{ log.updated_count }}</div>
+                    <div class="col-span-4">{{ log.triggered_by.username }} - {{ log.created_at.strftime('%d/%m %H:%M') }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">Aucune synchronisation executee.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if current_user.role == 'admin' %}
+<section class="mb-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+    <h2 class="mb-3 text-2xl font-bold">Creer un compte prof</h2>
+    <form method="POST" action="{{ url_for('admin_create_prof') }}" class="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <input name="username" placeholder="username" required class="rounded-2xl border border-slate-300 px-4 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+        <input name="email" type="email" placeholder="email" required class="rounded-2xl border border-slate-300 px-4 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+        <input name="password" type="password" minlength="6" placeholder="mot de passe" required class="rounded-2xl border border-slate-300 px-4 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+        <select name="school_class" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+            {% for level in LEVELS %}
+                <option value="{{ level }}">{{ level }}</option>
+            {% endfor %}
+        </select>
+        <div class="md:col-span-4">
+            <button type="submit" class="rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-bold text-white">Creer le prof</button>
+        </div>
+    </form>
+</section>
+{% endif %}
+
+<section class="mb-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+    <h2 class="mb-3 text-2xl font-bold">Comptes</h2>
+    <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">Securite: les mots de passe ne sont jamais affiches, uniquement les changements et resets.</p>
+    {% if users %}
+        <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div class="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div class="col-span-3">Utilisateur</div>
+                <div class="col-span-3">Email</div>
+                <div class="col-span-2">Role</div>
+                <div class="col-span-2">Classe</div>
+                <div class="col-span-2 text-right">Action</div>
+            </div>
+            {% for user in users %}
+                <div class="grid grid-cols-12 gap-2 border-b border-slate-100 px-3 py-2 text-sm dark:border-slate-800">
+                    <div class="col-span-3 truncate">{{ user.username }}</div>
+                    <div class="col-span-3 truncate">{{ user.email }}</div>
+                    <div class="col-span-2">{{ user.role }}</div>
+                    <div class="col-span-2">{{ user.school_class }}</div>
+                    <div class="col-span-2 text-right">
+                        {% if user.id != current_user.id %}
+                            <form method="POST" action="{{ url_for('staff_delete_user', user_id=user.id) }}">
+                                <button type="submit" class="rounded-lg bg-rose-600 px-2 py-1 text-xs font-semibold text-white">Supprimer</button>
+                            </form>
+                        {% else %}
+                            <span class="text-xs text-slate-400">Votre compte</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if current_user.role == 'admin' %}
+                    <div class="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                        <form method="POST" action="{{ url_for('admin_update_user', user_id=user.id) }}" class="grid grid-cols-1 gap-2 md:grid-cols-5">
+                            <div>
+                                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Role</label>
+                                <select name="role" class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                    <option value="eleve" {% if user.role == 'eleve' %}selected{% endif %}>eleve</option>
+                                    <option value="prof" {% if user.role == 'prof' %}selected{% endif %}>prof</option>
+                                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>admin</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Classe</label>
+                                <select name="school_class" class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                    {% for level in LEVELS %}
+                                        <option value="{{ level }}" {% if user.school_class == level %}selected{% endif %}>{{ level }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Nouveau mot de passe</label>
+                                <input type="password" name="new_password" minlength="6" placeholder="laisser vide" class="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                            </div>
+                            <div class="md:self-end">
+                                <button type="submit" class="w-full rounded-lg bg-cyan-600 px-2 py-1.5 text-xs font-bold text-white">Mettre a jour</button>
+                            </div>
+                        </form>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">Aucun compte.</p>
+    {% endif %}
+</section>
+
+<section class="mb-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+    <h2 class="mb-3 text-2xl font-bold">Historique des changements de comptes</h2>
+    {% if audit_logs %}
+        <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div class="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <div class="col-span-2">Date</div>
+                <div class="col-span-2">Acteur</div>
+                <div class="col-span-2">Cible</div>
+                <div class="col-span-2">Action</div>
+                <div class="col-span-4">Details</div>
+            </div>
+            {% for log in audit_logs %}
+                <div class="grid grid-cols-12 gap-2 border-b border-slate-100 px-3 py-2 text-xs dark:border-slate-800">
+                    <div class="col-span-2">{{ log.created_at.strftime('%d/%m %H:%M') }}</div>
+                    <div class="col-span-2">{{ log.actor.username if log.actor else 'systeme' }}</div>
+                    <div class="col-span-2">{{ log.target_user.username if log.target_user else ('id:'+log.target_user_id|string) }}</div>
+                    <div class="col-span-2">{{ log.action }}</div>
+                    <div class="col-span-4 truncate">{{ log.details }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">Aucun evenement de compte enregistre.</p>
+    {% endif %}
+</section>
+
+<section class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+        <h2 class="mb-3 text-2xl font-bold">Signalements</h2>
+        {% if reports %}
+            <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div class="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div class="col-span-2">ID</div>
+                    <div class="col-span-3">Ressource</div>
+                    <div class="col-span-3">Par</div>
+                    <div class="col-span-2">Statut</div>
+                    <div class="col-span-2 text-right">Action</div>
+                </div>
+                {% for report in reports %}
+                    <div class="grid grid-cols-12 gap-2 border-b border-slate-100 px-3 py-2 text-sm dark:border-slate-800">
+                        <div class="col-span-2">#{{ report.id }}</div>
+                        <div class="col-span-3">#{{ report.resource_id }}{% if report.resource %} - {{ report.resource.original_filename[:20] }}{% endif %}</div>
+                        <div class="col-span-3">{{ report.reporter.username }}</div>
+                        <div class="col-span-2">{{ report.status }}</div>
+                        <div class="col-span-2 text-right">
+                            <form method="POST" action="{{ url_for('admin_close_report', report_id=report.id) }}">
+                                <button type="submit" class="rounded-lg bg-slate-900 px-2 py-1 text-xs font-semibold text-white dark:bg-cyan-600">Fermer</button>
+                            </form>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-base text-slate-500 dark:text-slate-400">Aucun signalement.</p>
+        {% endif %}
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-md dark:border-slate-700 dark:bg-slate-900">
+        <h2 class="mb-3 text-2xl font-bold">Ressources</h2>
+        {% if resources %}
+            <div class="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div class="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <div class="col-span-4">Fichier</div>
+                    <div class="col-span-2">Matiere</div>
+                    <div class="col-span-2">Niveau</div>
+                    <div class="col-span-2">Auteur</div>
+                    <div class="col-span-2 text-right">Action</div>
+                </div>
+                {% for resource in resources %}
+                    <div class="grid grid-cols-12 gap-2 border-b border-slate-100 px-3 py-2 text-sm dark:border-slate-800">
+                        <div class="col-span-4 truncate">{{ resource.original_filename }}</div>
+                        <div class="col-span-2">{{ resource.subject }}</div>
+                        <div class="col-span-2">{{ resource.level }}</div>
+                        <div class="col-span-2">
+                            <div class="flex items-center gap-2">
+                                {% if profile_image_url(resource.uploaded_by) %}
+                                    <img src="{{ profile_image_url(resource.uploaded_by) }}" alt="avatar" class="h-7 w-7 rounded-full object-cover">
+                                {% else %}
+                                    <div class="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-100 text-[10px] font-bold text-cyan-700">{{ resource.uploaded_by.username[0]|upper }}</div>
+                                {% endif %}
+                                <div class="min-w-0">
+                                    <p class="truncate text-xs font-semibold">{{ resource.uploaded_by.username }}</p>
+                                    <p class="text-[10px] text-slate-500">{{ resource.uploaded_by.role }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-span-2 text-right">
+                            {% if not resource.is_removed %}
+                                <form method="POST" action="{{ url_for('admin_delete_resource', resource_id=resource.id) }}">
+                                    <button type="submit" class="rounded-lg bg-rose-600 px-2 py-1 text-xs font-semibold text-white">Supprimer</button>
+                                </form>
+                            {% else %}
+                                <span class="rounded-lg bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">Deja supprime</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-base text-slate-500 dark:text-slate-400">Aucune ressource.</p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
