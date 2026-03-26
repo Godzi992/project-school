@@ -53,6 +53,7 @@
                         <div class="space-y-2">
                             <a href="{{ url_for('index') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'index' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Accueil fiches</a>
                             <a href="{{ url_for('upload') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'upload' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Faire une fiche</a>
+                            <a href="{{ url_for('create_stylish_pdf') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'create_stylish_pdf' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">PDF Studio</a>
                             <a href="{{ url_for('my_resources') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep == 'my_resources' %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Mes fiches publiees</a>
                             <a href="{{ url_for('account_settings') }}" class="block rounded-2xl px-4 py-3 text-sm font-semibold {% if ep in ['account_settings', 'update_ui_settings', 'update_profile_photo', 'delete_account'] %}bg-cyan-600 text-white{% else %}border border-slate-300 dark:border-slate-600{% endif %}">Settings compte</a>
                             {% if current_user.role in ['admin', 'prof'] %}

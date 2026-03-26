@@ -1,6 +1,8 @@
 import os
+import re
 import uuid
 from datetime import datetime
+from xml.sax.saxutils import escape
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
@@ -9,6 +11,25 @@ from sqlalchemy import or_
 from PIL import Image
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+
+try:
+    from reportlab.lib import colors  # type: ignore[import-not-found]
+    from reportlab.lib.enums import TA_CENTER  # type: ignore[import-not-found]
+    from reportlab.lib.pagesizes import A4  # type: ignore[import-not-found]
+    from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-not-found]
+    from reportlab.pdfgen import canvas  # type: ignore[import-not-found]
+    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer  # type: ignore[import-not-found]
+except ImportError:
+    colors = None
+    TA_CENTER = None
+    A4 = None
+    ParagraphStyle = None
+    BaseDocTemplate = None
+    Frame = None
+    PageTemplate = None
+    Paragraph = None
+    Spacer = None
+    canvas = None
 
 try:
     import easyocr
@@ -247,6 +268,415 @@ def fallback_text_like_ratio(image_path: str) -> float:
             samples += 1
 
     return strong_edges / max(samples, 1)
+
+
+def infer_paragraphs(content: str):
+    """Create readable paragraphs from raw user text when no blank lines are provided."""
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return []
+
+    if "\n\n" in normalized:
+        blocks = [block.strip() for block in re.split(r"\n\s*\n+", normalized) if block.strip()]
+        return blocks
+
+    lines = [line.strip() for line in normalized.split("\n") if line.strip()]
+    if len(lines) > 1:
+        return lines
+
+    sentence_parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", normalized) if part.strip()]
+    if len(sentence_parts) <= 2:
+        return [normalized]
+
+    paragraphs = []
+    current = []
+    current_len = 0
+    for sentence in sentence_parts:
+        current.append(sentence)
+        current_len += len(sentence)
+        if len(current) >= 3 or current_len >= 280:
+            paragraphs.append(" ".join(current).strip())
+            current = []
+            current_len = 0
+
+    if current:
+        paragraphs.append(" ".join(current).strip())
+    return paragraphs
+
+
+def normalize_structured_content(content: str) -> str:
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+
+    # Fix glued words from some AI outputs, e.g. "DefinitionUne" -> "Definition Une".
+    normalized = re.sub(r"([a-zA-ZÀ-ÿ])([A-ZÀ-ÖØ-Þ])", r"\1 \2", normalized)
+
+    # If numbered sections are glued in one line, force visual section breaks.
+    normalized = re.sub(r"([.!?])\s+(\d+\.\s+[A-ZÀ-ÖØ-Þ])", r"\1\n\n\2", normalized)
+    return normalized
+
+
+def latex_to_readable(math_expr: str) -> str:
+    expr = math_expr.strip()
+    if not expr:
+        return ""
+
+    expr = expr.replace("\\left", "").replace("\\right", "")
+
+    for _ in range(5):
+        updated = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1)/(\2)", expr)
+        if updated == expr:
+            break
+        expr = updated
+
+    expr = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", expr)
+    expr = re.sub(r"\^\{([^{}]+)\}", r"^(\1)", expr)
+    expr = re.sub(r"_\{([^{}]+)\}", r"_(\1)", expr)
+
+    replacements = {
+        r"\\times": "x",
+        r"\\cdot": ".",
+        r"\\neq": "!=",
+        r"\\leq": "<=",
+        r"\\geq": ">=",
+        r"\\to": "->",
+        r"\\alpha": "alpha",
+        r"\\beta": "beta",
+        r"\\gamma": "gamma",
+        r"\\Delta": "Delta",
+        r"\\sum": "sum",
+        r"\\int": "int",
+    }
+    for latex_token, replacement in replacements.items():
+        expr = expr.replace(latex_token, replacement)
+
+    expr = expr.replace("{", "(").replace("}", ")")
+    expr = re.sub(r"\s+", " ", expr).strip()
+    return expr
+
+
+def render_custom_markup(text: str) -> str:
+    """Convert lightweight user markers and inline math to ReportLab paragraph markup.
+
+    Supported markers:
+    - §texte§ or **texte** => bold
+    - *texte* => italic
+    - $...$ => inline math (readable conversion)
+    """
+
+    segments = re.split(r"(\$[^$\n]+\$)", text)
+    rendered_parts = []
+
+    for segment in segments:
+        if not segment:
+            continue
+
+        if segment.startswith("$") and segment.endswith("$"):
+            inline_math = escape(latex_to_readable(segment[1:-1]))
+            rendered_parts.append(f"<font name='Courier-Bold'>{inline_math}</font>")
+            continue
+
+        safe = escape(segment)
+        safe = re.sub(r"§([^§\n]{1,200})§", r"<b>\1</b>", safe)
+        safe = re.sub(r"\*\*([^*\n]{1,200})\*\*", r"<b>\1</b>", safe)
+        safe = re.sub(r"__([^_\n]{1,200})__", r"<b>\1</b>", safe)
+        safe = re.sub(r"(?<!\*)\*([^*\n]{1,200})\*(?!\*)", r"<i>\1</i>", safe)
+        rendered_parts.append(safe)
+
+    return "".join(rendered_parts).replace("\n", "<br/>")
+
+
+def parse_content_blocks(content: str):
+    """Parse AI/user text into structured blocks: heading, paragraph, bullet, math."""
+    normalized = normalize_structured_content(content)
+    if not normalized:
+        return []
+
+    lines = normalized.split("\n")
+    blocks = []
+    current_paragraph_lines = []
+    math_buffer = []
+    in_math_block = False
+
+    def flush_paragraph_lines():
+        nonlocal current_paragraph_lines
+        if not current_paragraph_lines:
+            return
+        chunk = "\n".join(current_paragraph_lines).strip()
+        for para in infer_paragraphs(chunk):
+            blocks.append({"type": "paragraph", "text": para})
+        current_paragraph_lines = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+
+        if in_math_block:
+            if "$$" in line:
+                before, _, after = line.partition("$$")
+                if before.strip():
+                    math_buffer.append(before.strip())
+                if math_buffer:
+                    blocks.append({"type": "math", "text": " ".join(math_buffer)})
+                math_buffer = []
+                in_math_block = False
+                line = after.strip()
+                if not line:
+                    continue
+            else:
+                if line:
+                    math_buffer.append(line)
+                continue
+
+        if not line:
+            flush_paragraph_lines()
+            continue
+
+        if line.startswith("$$") and line.endswith("$$") and len(line) > 4:
+            flush_paragraph_lines()
+            blocks.append({"type": "math", "text": line[2:-2].strip()})
+            continue
+
+        if line.startswith("$$"):
+            flush_paragraph_lines()
+            in_math_block = True
+            start_part = line[2:].strip()
+            if start_part:
+                math_buffer.append(start_part)
+            continue
+
+        heading_only_match = re.match(r"^#{1,3}\s+(.+)$", line)
+        if heading_only_match:
+            flush_paragraph_lines()
+            blocks.append({"type": "heading", "text": heading_only_match.group(1).strip()})
+            continue
+
+        numbered_heading_match = re.match(r"^(\d+\.\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'\- ]{2,55}?)(?=\s+[A-ZÀ-ÖØ-Þ][a-zà-ÿ]{2,}\s)", line)
+        if numbered_heading_match and len(line) > len(numbered_heading_match.group(1)) + 12:
+            flush_paragraph_lines()
+            heading = numbered_heading_match.group(1).strip()
+            remainder = line[len(numbered_heading_match.group(1)) :].strip()
+            blocks.append({"type": "heading", "text": heading})
+            if remainder:
+                current_paragraph_lines.append(remainder)
+            continue
+
+        if re.match(r"^\d+\.\s+.+$", line):
+            flush_paragraph_lines()
+            blocks.append({"type": "heading", "text": line})
+            continue
+
+        bullet_match = re.match(r"^[-*•]\s+(.+)$", line)
+        if bullet_match:
+            flush_paragraph_lines()
+            blocks.append({"type": "bullet", "text": bullet_match.group(1).strip()})
+            continue
+
+        single_math_match = re.match(r"^\$(.+)\$$", line)
+        if single_math_match and "$" not in single_math_match.group(1):
+            flush_paragraph_lines()
+            blocks.append({"type": "math", "text": single_math_match.group(1).strip()})
+            continue
+
+        current_paragraph_lines.append(line)
+
+    flush_paragraph_lines()
+    if math_buffer:
+        blocks.append({"type": "math", "text": " ".join(math_buffer)})
+
+    return blocks
+
+
+def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str, author_name: str, accent_hex: str):
+    if (
+        colors is None
+        or A4 is None
+        or canvas is None
+        or ParagraphStyle is None
+        or BaseDocTemplate is None
+        or Frame is None
+        or PageTemplate is None
+        or Paragraph is None
+        or Spacer is None
+    ):
+        raise RuntimeError("ReportLab non disponible")
+
+    page_width, page_height = A4
+    margin = 42
+    accent = colors.HexColor(accent_hex)
+    accent_soft = colors.Color(
+        min(accent.red + 0.22, 1.0),
+        min(accent.green + 0.22, 1.0),
+        min(accent.blue + 0.22, 1.0),
+    )
+
+    def draw_page_header(pdf_canvas, page_number: int):
+        header_height = 128
+        pdf_canvas.setFillColor(accent)
+        pdf_canvas.rect(0, page_height - header_height, page_width, header_height, stroke=0, fill=1)
+
+        pdf_canvas.setFillColor(accent_soft)
+        pdf_canvas.circle(page_width - 48, page_height - 35, 55, stroke=0, fill=1)
+        pdf_canvas.circle(page_width - 95, page_height - 78, 28, stroke=0, fill=1)
+
+        pdf_canvas.setFillColor(colors.white)
+        pdf_canvas.setFont("Helvetica-Bold", 22)
+        pdf_canvas.drawString(margin, page_height - 54, title[:70])
+
+        if subtitle:
+            pdf_canvas.setFont("Helvetica", 11)
+            pdf_canvas.drawString(margin, page_height - 74, subtitle[:110])
+
+        pdf_canvas.setFont("Helvetica-Bold", 9)
+        pdf_canvas.drawRightString(page_width - margin, page_height - 104, f"PAGE {page_number}")
+
+    def draw_page_footer(pdf_canvas):
+        pdf_canvas.setStrokeColor(colors.HexColor("#d6dce5"))
+        pdf_canvas.setLineWidth(0.8)
+        pdf_canvas.line(margin, 36, page_width - margin, 36)
+        pdf_canvas.setFillColor(colors.HexColor("#5b6475"))
+        pdf_canvas.setFont("Helvetica", 9)
+        footer = f"Cree par {author_name} - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        pdf_canvas.drawString(margin, 24, footer)
+        pdf_canvas.drawRightString(page_width - margin, 24, "EcoShare - PDF Studio")
+
+    def draw_decorations(pdf_canvas, doc):
+        draw_page_header(pdf_canvas, doc.page)
+        draw_page_footer(pdf_canvas)
+
+        if doc.page == 1:
+            metadata_top = page_height - 170
+            pdf_canvas.setFillColor(colors.HexColor("#f5f8fc"))
+            pdf_canvas.roundRect(margin, metadata_top - 62, page_width - (2 * margin), 62, 8, stroke=0, fill=1)
+            pdf_canvas.setFillColor(colors.HexColor("#1f2a44"))
+            pdf_canvas.setFont("Helvetica-Bold", 10)
+            pdf_canvas.drawString(margin + 14, metadata_top - 22, "FICHE PEDAGOGIQUE")
+            pdf_canvas.setFont("Helvetica", 10)
+            pdf_canvas.drawString(margin + 14, metadata_top - 40, f"Auteur: {author_name}")
+            pdf_canvas.drawRightString(
+                page_width - margin - 14,
+                metadata_top - 40,
+                datetime.now().strftime("Edition du %d/%m/%Y"),
+            )
+            pdf_canvas.setFillColor(colors.HexColor("#1f2a44"))
+            pdf_canvas.setFont("Helvetica-Bold", 13)
+            pdf_canvas.drawString(margin, metadata_top - 92, "Contenu")
+
+    document = BaseDocTemplate(
+        file_path,
+        pagesize=A4,
+        title=title,
+        author=author_name,
+        leftMargin=margin,
+        rightMargin=margin,
+        topMargin=52,
+        bottomMargin=46,
+    )
+
+    first_frame = Frame(
+        margin,
+        46,
+        page_width - (2 * margin),
+        page_height - 320,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+        id="first_frame",
+    )
+    later_frame = Frame(
+        margin,
+        46,
+        page_width - (2 * margin),
+        page_height - 190,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+        id="later_frame",
+    )
+
+    first_template = PageTemplate(id="first", frames=[first_frame], onPage=draw_decorations, autoNextPageTemplate="later")
+    later_template = PageTemplate(id="later", frames=[later_frame], onPage=draw_decorations)
+    document.addPageTemplates([first_template, later_template])
+
+    body_style = ParagraphStyle(
+        "BodyStyle",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=15,
+        textColor=colors.HexColor("#1f2a44"),
+        spaceAfter=8,
+    )
+
+    heading_style = ParagraphStyle(
+        "HeadingStyle",
+        parent=body_style,
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=18,
+        spaceBefore=10,
+        spaceAfter=6,
+    )
+
+    bullet_style = ParagraphStyle(
+        "BulletStyle",
+        parent=body_style,
+        leftIndent=14,
+        firstLineIndent=-8,
+        spaceAfter=4,
+    )
+
+    math_style = ParagraphStyle(
+        "MathStyle",
+        parent=body_style,
+        fontName="Courier-Bold",
+        fontSize=12,
+        leading=16,
+        alignment=TA_CENTER,
+        backColor=colors.HexColor("#eef3fb"),
+        borderColor=colors.HexColor("#d8e2f0"),
+        borderWidth=0.6,
+        borderPadding=6,
+        borderRadius=4,
+        spaceBefore=4,
+        spaceAfter=8,
+    )
+
+    content_blocks = parse_content_blocks(content)
+    story = []
+    story.append(
+        Paragraph(
+            "<font color='#4f5b70'><i>Astuce: utilisez §texte§ ou **texte** pour le gras, *texte* pour l'italique et $...$ ou $$...$$ pour les formules.</i></font>",
+            body_style,
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    for block in content_blocks:
+        block_type = block.get("type")
+        text = block.get("text", "").strip()
+        if not text:
+            continue
+
+        if block_type == "heading":
+            story.append(Paragraph(render_custom_markup(text), heading_style))
+            story.append(Spacer(1, 2))
+            continue
+
+        if block_type == "bullet":
+            story.append(Paragraph(f"• {render_custom_markup(text)}", bullet_style))
+            continue
+
+        if block_type == "math":
+            readable_math = escape(latex_to_readable(text))
+            story.append(Paragraph(readable_math, math_style))
+            continue
+
+        story.append(Paragraph(render_custom_markup(text), body_style))
+        story.append(Spacer(1, 6))
+
+    document.build(story)
 
 
 def simulate_ecole_directe_import():
@@ -589,6 +1019,88 @@ def quick_upload():
 
     flash("Reglages de votre derniere fiche precharges.", "success")
     return redirect(url_for("upload", subject=last_resource.subject, level=last_resource.level))
+
+
+@app.route("/pdf/create", methods=["GET", "POST"])
+@login_required
+def create_stylish_pdf():
+    palette = {
+        "teal": "#0f766e",
+        "coral": "#dc5f52",
+        "indigo": "#3949ab",
+        "emerald": "#1b8f5a",
+        "slate": "#334155",
+    }
+
+    default_subject = request.args.get("subject", "")
+    default_level = request.args.get("level", "")
+    if default_subject not in SUBJECTS:
+        default_subject = ""
+    if default_level not in LEVELS:
+        default_level = ""
+
+    if current_user.role == "eleve":
+        default_level = current_user.school_class
+
+    if request.method == "POST":
+        if canvas is None:
+            flash("La creation PDF n'est pas disponible: installez reportlab.", "error")
+            return redirect(url_for("create_stylish_pdf"))
+
+        title = request.form.get("title", "").strip()
+        subtitle = request.form.get("subtitle", "").strip()
+        subject = request.form.get("subject", "").strip()
+        level = request.form.get("level", "").strip()
+        body = request.form.get("body", "").strip()
+        theme = request.form.get("theme", "teal").strip()
+
+        if current_user.role == "eleve":
+            level = current_user.school_class
+
+        if not title or len(title) < 4:
+            flash("Le titre doit contenir au moins 4 caracteres.", "error")
+            return redirect(url_for("create_stylish_pdf"))
+        if subject not in SUBJECTS or level not in LEVELS:
+            flash("Matiere ou niveau invalide.", "error")
+            return redirect(url_for("create_stylish_pdf"))
+        if not body or len(body) < 40:
+            flash("Ajoutez un contenu plus detaille (minimum 40 caracteres).", "error")
+            return redirect(url_for("create_stylish_pdf"))
+        if theme not in palette:
+            theme = "teal"
+
+        safe_title = secure_filename(title) or "fiche_stylisee"
+        unique_name = f"pdf_{uuid.uuid4().hex}.pdf"
+        output_path = os.path.join(app.config["UPLOAD_FOLDER"], unique_name)
+
+        generate_stylish_pdf(
+            file_path=output_path,
+            title=title[:90],
+            subtitle=subtitle[:140],
+            content=body,
+            author_name=current_user.username,
+            accent_hex=palette[theme],
+        )
+
+        resource = Resource(
+            filename=unique_name,
+            original_filename=f"{safe_title}.pdf",
+            filetype="pdf",
+            subject=subject,
+            level=level,
+            uploaded_by_id=current_user.id,
+        )
+        db.session.add(resource)
+        db.session.commit()
+
+        flash("PDF cree et ajoute a vos ressources.", "success")
+        return redirect(url_for("my_resources"))
+
+    return render_template(
+        "create_pdf.html",
+        default_subject=default_subject,
+        default_level=default_level,
+    )
 
 
 @app.route("/my-fiches")
@@ -948,10 +1460,19 @@ def login():
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        identifier = request.form.get("identifier", "").strip()
+        if not identifier:
+            # Backward compatibility if an old form still posts "email".
+            identifier = request.form.get("email", "").strip()
         password = request.form.get("password", "")
+        identifier_lower = identifier.lower()
 
-        user = User.query.filter_by(email=email).first()
+        user = User.query.filter(
+            or_(
+                User.email == identifier_lower,
+                User.username.ilike(identifier),
+            )
+        ).first()
         if user and check_password_hash(user.password_hash, password):
             login_user(user)
             flash("Connexion reussie.", "success")

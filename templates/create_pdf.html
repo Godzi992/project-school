@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="mx-auto max-w-4xl rounded-3xl border border-cyan-200 bg-white/95 p-7 shadow-xl dark:border-slate-700 dark:bg-slate-900/90 md:p-9">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">PDF Studio</h1>
+            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Cree une fiche PDF avec une couverture coloree, des sections propres et un rendu pret a partager.</p>
+        </div>
+        <a href="{{ url_for('upload') }}" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-600">Retour upload</a>
+    </div>
+
+    <form method="POST" class="mt-7 space-y-5">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+                <label for="title" class="mb-2 block text-sm font-semibold">Titre</label>
+                <input id="title" name="title" required minlength="4" maxlength="90" placeholder="Ex: Fonctions lineaires - fiche complete"
+                       class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+            </div>
+            <div>
+                <label for="subtitle" class="mb-2 block text-sm font-semibold">Sous-titre (optionnel)</label>
+                <input id="subtitle" name="subtitle" maxlength="140" placeholder="Ex: Resume + exercices corriges"
+                       class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+                <label for="subject" class="mb-2 block text-sm font-semibold">Matiere</label>
+                <select id="subject" name="subject" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    <option value="">Choisir...</option>
+                    {% for subject in SUBJECTS %}
+                        <option value="{{ subject }}" {% if default_subject == subject %}selected{% endif %}>{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label for="level" class="mb-2 block text-sm font-semibold">Niveau</label>
+                {% if current_user.role == 'eleve' %}
+                    <input type="hidden" name="level" value="{{ current_user.school_class }}">
+                    <div class="w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-base font-semibold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">{{ current_user.school_class }} (automatique)</div>
+                {% else %}
+                    <select id="level" name="level" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                        <option value="">Choisir...</option>
+                        {% for level in LEVELS %}
+                            <option value="{{ level }}" {% if default_level == level %}selected{% endif %}>{{ level }}</option>
+                        {% endfor %}
+                    </select>
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="theme" class="mb-2 block text-sm font-semibold">Theme visuel</label>
+                <select id="theme" name="theme" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    <option value="teal">Teal moderne</option>
+                    <option value="coral">Coral energie</option>
+                    <option value="indigo">Indigo premium</option>
+                    <option value="emerald">Emerald nature</option>
+                    <option value="slate">Slate minimal</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label for="body" class="mb-2 block text-sm font-semibold">Contenu de la fiche</label>
+            <textarea id="body" name="body" required minlength="40" rows="12" placeholder="Ecris ici ton cours, tes definitions, methodes et exercices..."
+                      class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
+            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Minimum 40 caracteres. Les sauts de ligne sont conserves dans le PDF.</p>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Mise en forme: §mot§ ou **mot** pour le gras, *mot* pour l'italique, $f(x)=ax$ ou $$a=\frac{f(x)}{x}$$ pour les formules.</p>
+        </div>
+
+        <div class="rounded-2xl bg-slate-100 p-4 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            Le PDF est automatiquement ajoute dans vos ressources apres creation.
+        </div>
+
+        <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer ma fiche PDF</button>
+    </form>
+</section>
+{% endblock %}

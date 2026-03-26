@@ -18,8 +18,8 @@
         </div>
     {% endif %}
 
-    <form method="GET" class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4 md:items-end">
-        <div class="w-full md:w-72">
+    <form method="GET" class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
+        <div class="w-full min-w-0">
             <label for="classe" class="mb-2 block text-sm font-semibold">Filtrer par classe</label>
             <select id="classe" name="classe" {% if class_locked %}disabled{% endif %} class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 {% if class_locked %}cursor-not-allowed bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400{% endif %}">
                 <option value="all" {% if class_filter == 'all' %}selected{% endif %}>Toutes les classes</option>
@@ -45,7 +45,7 @@
             <label for="q" class="mb-2 block text-sm font-semibold">Recherche</label>
             <input id="q" name="q" value="{{ search_query }}" placeholder="nom du fichier..." class="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
         </div>
-        <button type="submit" class="rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white dark:bg-cyan-600">Actualiser</button>
+        <button type="submit" class="rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white dark:bg-cyan-600 md:col-span-2 xl:col-span-1">Actualiser</button>
     </form>
 </section>
 
