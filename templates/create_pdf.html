@@ -1,80 +1,313 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<section class="mx-auto max-w-4xl rounded-3xl border border-cyan-200 bg-white/95 p-7 shadow-xl dark:border-slate-700 dark:bg-slate-900/90 md:p-9">
+<section class="mx-auto max-w-7xl rounded-3xl border border-cyan-200 bg-white/95 p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900/90 md:p-7">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">PDF Studio</h1>
-            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Cree une fiche PDF avec une couverture coloree, des sections propres et un rendu pret a partager.</p>
+            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Apercu en direct, deplacement des blocs et personnalisation avancee avant export.</p>
         </div>
         <a href="{{ url_for('upload') }}" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-600">Retour upload</a>
     </div>
 
-    <form method="POST" class="mt-7 space-y-5">
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-                <label for="title" class="mb-2 block text-sm font-semibold">Titre</label>
-                <input id="title" name="title" required minlength="4" maxlength="90" placeholder="Ex: Fonctions lineaires - fiche complete"
-                       class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+    <form method="POST" class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <input type="hidden" id="layout_json" name="layout_json" value="">
+
+        <div class="space-y-4 xl:col-span-5">
+            <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Infos fiche</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label for="title" class="mb-1 block text-sm font-semibold">Titre</label>
+                        <input id="title" name="title" required minlength="4" maxlength="90" placeholder="Ex: Fonctions lineaires - fiche complete" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label for="subtitle" class="mb-1 block text-sm font-semibold">Sous-titre (optionnel)</label>
+                        <input id="subtitle" name="subtitle" maxlength="140" placeholder="Ex: Resume + exercices corriges" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div>
+                            <label for="subject" class="mb-1 block text-sm font-semibold">Matiere</label>
+                            <select id="subject" name="subject" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                <option value="">Choisir...</option>
+                                {% for subject in SUBJECTS %}
+                                    <option value="{{ subject }}" {% if default_subject == subject %}selected{% endif %}>{{ subject }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="level" class="mb-1 block text-sm font-semibold">Niveau</label>
+                            {% if current_user.role == 'eleve' %}
+                                <input type="hidden" name="level" value="{{ current_user.school_class }}">
+                                <div class="w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-base font-semibold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">{{ current_user.school_class }}</div>
+                            {% else %}
+                                <select id="level" name="level" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                    <option value="">Choisir...</option>
+                                    {% for level in LEVELS %}
+                                        <option value="{{ level }}" {% if default_level == level %}selected{% endif %}>{{ level }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <label for="theme" class="mb-1 block text-sm font-semibold">Theme visuel</label>
+                            <select id="theme" name="theme" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                <option value="teal">Teal moderne</option>
+                                <option value="coral">Coral energie</option>
+                                <option value="indigo">Indigo premium</option>
+                                <option value="emerald">Emerald nature</option>
+                                <option value="slate">Slate minimal</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <label for="subtitle" class="mb-2 block text-sm font-semibold">Sous-titre (optionnel)</label>
-                <input id="subtitle" name="subtitle" maxlength="140" placeholder="Ex: Resume + exercices corriges"
-                       class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+
+            <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Contenu</h2>
+                <textarea id="body" name="body" required minlength="40" rows="11" placeholder="Ecris ici ton cours, tes definitions, methodes et exercices..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
+                <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Tu peux glisser les blocs Titre, Sous-titre et Contenu dans l'apercu a droite.</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Mise en forme: §mot§ ou **mot** (gras), *mot* (italique), $f(x)=ax$ ou $$a=\frac{f(x)}{x}$$ (formules).</p>
             </div>
+
+            <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Personnalisation</h2>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label class="text-xs font-semibold">Hauteur entete
+                        <input id="header_height" type="range" min="90" max="210" value="{{ default_studio_settings.header_height }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold">Taille titre
+                        <input id="title_font_size" type="range" min="16" max="34" value="{{ default_studio_settings.title_font_size }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold">Taille sous-titre
+                        <input id="subtitle_font_size" type="range" min="9" max="20" value="{{ default_studio_settings.subtitle_font_size }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold">Texte contenu
+                        <input id="body_font_size" type="range" min="9" max="16" value="{{ default_studio_settings.body_font_size }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold md:col-span-2">Titres sections
+                        <input id="heading_font_size" type="range" min="11" max="22" value="{{ default_studio_settings.heading_font_size }}" class="mt-1 w-full">
+                    </label>
+                </div>
+                <button id="reset_layout" type="button" class="mt-3 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-slate-600">Reset placement</button>
+            </div>
+
+            <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer ma fiche PDF</button>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-                <label for="subject" class="mb-2 block text-sm font-semibold">Matiere</label>
-                <select id="subject" name="subject" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                    <option value="">Choisir...</option>
-                    {% for subject in SUBJECTS %}
-                        <option value="{{ subject }}" {% if default_subject == subject %}selected{% endif %}>{{ subject }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+        <div class="xl:col-span-7">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                <div class="mb-3 flex items-center justify-between">
+                    <p class="text-sm font-bold">Apercu en direct (A4)</p>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">Glisser pour deplacer</span>
+                </div>
+                <div id="pdf-preview-page" class="relative mx-auto aspect-[595/842] w-full max-w-[595px] overflow-hidden rounded-xl border border-slate-300 bg-white shadow-lg dark:border-slate-600">
+                    <div id="preview-header" class="absolute left-0 top-0 w-full bg-teal-700"></div>
+                    <div id="preview-shape-a" class="absolute rounded-full bg-white/30"></div>
+                    <div id="preview-shape-b" class="absolute rounded-full bg-white/30"></div>
 
-            <div>
-                <label for="level" class="mb-2 block text-sm font-semibold">Niveau</label>
-                {% if current_user.role == 'eleve' %}
-                    <input type="hidden" name="level" value="{{ current_user.school_class }}">
-                    <div class="w-full rounded-2xl border border-slate-300 bg-slate-100 px-4 py-3 text-base font-semibold dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">{{ current_user.school_class }} (automatique)</div>
-                {% else %}
-                    <select id="level" name="level" required class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                        <option value="">Choisir...</option>
-                        {% for level in LEVELS %}
-                            <option value="{{ level }}" {% if default_level == level %}selected{% endif %}>{{ level }}</option>
-                        {% endfor %}
-                    </select>
-                {% endif %}
-            </div>
+                    <div id="drag-title" data-block="title" class="studio-draggable absolute z-20 cursor-move rounded-md border border-dashed border-white/70 bg-black/15 px-2 py-1 text-white">
+                        <div id="preview-title" class="font-bold">Titre de la fiche</div>
+                    </div>
 
-            <div>
-                <label for="theme" class="mb-2 block text-sm font-semibold">Theme visuel</label>
-                <select id="theme" name="theme" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                    <option value="teal">Teal moderne</option>
-                    <option value="coral">Coral energie</option>
-                    <option value="indigo">Indigo premium</option>
-                    <option value="emerald">Emerald nature</option>
-                    <option value="slate">Slate minimal</option>
-                </select>
+                    <div id="drag-subtitle" data-block="subtitle" class="studio-draggable absolute z-20 cursor-move rounded-md border border-dashed border-white/70 bg-black/15 px-2 py-1 text-white/95">
+                        <div id="preview-subtitle">Sous-titre</div>
+                    </div>
+
+                    <div id="preview-meta" class="absolute left-[7%] rounded-lg bg-slate-100 px-3 py-2 text-[10px] text-slate-700">
+                        <div class="font-bold tracking-wide">FICHE PEDAGOGIQUE</div>
+                        <div class="mt-1">Auteur: {{ current_user.username }}</div>
+                    </div>
+
+                    <div id="drag-content" data-block="content" class="studio-draggable absolute z-20 w-[72%] cursor-move rounded-md border border-dashed border-slate-400 bg-white/75 px-2 py-1">
+                        <div class="text-[11px] font-bold text-slate-700">Contenu</div>
+                        <div id="preview-body" class="mt-1 max-h-[430px] overflow-auto text-[11px] leading-relaxed text-slate-700"></div>
+                    </div>
+
+                    <div class="absolute bottom-0 left-0 w-full border-t border-slate-300 px-8 py-2 text-[10px] text-slate-500">EcoShare - PDF Studio</div>
+                </div>
             </div>
         </div>
-
-        <div>
-            <label for="body" class="mb-2 block text-sm font-semibold">Contenu de la fiche</label>
-            <textarea id="body" name="body" required minlength="40" rows="12" placeholder="Ecris ici ton cours, tes definitions, methodes et exercices..."
-                      class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
-            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Minimum 40 caracteres. Les sauts de ligne sont conserves dans le PDF.</p>
-            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Mise en forme: §mot§ ou **mot** pour le gras, *mot* pour l'italique, $f(x)=ax$ ou $$a=\frac{f(x)}{x}$$ pour les formules.</p>
-        </div>
-
-        <div class="rounded-2xl bg-slate-100 p-4 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Le PDF est automatiquement ajoute dans vos ressources apres creation.
-        </div>
-
-        <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer ma fiche PDF</button>
     </form>
 </section>
+
+<script id="studio-defaults" type="application/json">{{ default_studio_settings|tojson }}</script>
+<script>
+    (function () {
+        const paletteMap = {
+            teal: "#0f766e",
+            coral: "#dc5f52",
+            indigo: "#3949ab",
+            emerald: "#1b8f5a",
+            slate: "#334155",
+        };
+
+        const defaults = JSON.parse(document.getElementById("studio-defaults").textContent || "{}");
+        const state = JSON.parse(JSON.stringify(defaults));
+
+        const titleInput = document.getElementById("title");
+        const subtitleInput = document.getElementById("subtitle");
+        const bodyInput = document.getElementById("body");
+        const themeInput = document.getElementById("theme");
+        const layoutInput = document.getElementById("layout_json");
+        const page = document.getElementById("pdf-preview-page");
+
+        const previewHeader = document.getElementById("preview-header");
+        const previewShapeA = document.getElementById("preview-shape-a");
+        const previewShapeB = document.getElementById("preview-shape-b");
+        const previewTitle = document.getElementById("preview-title");
+        const previewSubtitle = document.getElementById("preview-subtitle");
+        const previewBody = document.getElementById("preview-body");
+        const previewMeta = document.getElementById("preview-meta");
+
+        const dragTitle = document.getElementById("drag-title");
+        const dragSubtitle = document.getElementById("drag-subtitle");
+        const dragContent = document.getElementById("drag-content");
+
+        const rangeIds = ["header_height", "title_font_size", "subtitle_font_size", "body_font_size", "heading_font_size"];
+        const ranges = {};
+        rangeIds.forEach((id) => {
+            const el = document.getElementById(id);
+            ranges[id] = el;
+            el.addEventListener("input", () => {
+                state[id] = Number(el.value);
+                applyPreview();
+            });
+        });
+
+        function escapeHtml(value) {
+            return value
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function formatPreviewText(raw) {
+            const lines = raw.split(/\n+/).filter((line) => line.trim() !== "");
+            if (!lines.length) {
+                return "Ajoute ton contenu pour voir un apercu structure.";
+            }
+            const sample = lines.slice(0, 9).map((line) => {
+                let out = escapeHtml(line);
+                out = out.replace(/§([^§\n]{1,200})§/g, "<strong>$1</strong>");
+                out = out.replace(/\*\*([^*\n]{1,200})\*\*/g, "<strong>$1</strong>");
+                out = out.replace(/\*([^*\n]{1,200})\*/g, "<em>$1</em>");
+                if (/^\d+\.\s+/.test(line)) {
+                    return `<div class='mt-2 font-bold'>${out}</div>`;
+                }
+                if (/^[-*•]\s+/.test(line)) {
+                    return `<div class='ml-3'>• ${out.replace(/^[-*•]\s+/, "")}</div>`;
+                }
+                return `<div>${out}</div>`;
+            });
+            return sample.join("");
+        }
+
+        function syncLayoutJson() {
+            layoutInput.value = JSON.stringify(state);
+        }
+
+        function setBlockPosition(blockEl, leftPct, topPct) {
+            blockEl.style.left = `${leftPct}%`;
+            blockEl.style.top = `${topPct}%`;
+        }
+
+        function applyPreview() {
+            const accent = paletteMap[themeInput.value] || paletteMap.teal;
+            previewHeader.style.background = accent;
+            previewHeader.style.height = `${state.header_height}px`;
+
+            previewShapeA.style.width = "110px";
+            previewShapeA.style.height = "110px";
+            previewShapeA.style.right = "-20px";
+            previewShapeA.style.top = "8px";
+
+            previewShapeB.style.width = "58px";
+            previewShapeB.style.height = "58px";
+            previewShapeB.style.right = "65px";
+            previewShapeB.style.top = "57px";
+
+            previewTitle.style.fontSize = `${state.title_font_size}px`;
+            previewSubtitle.style.fontSize = `${state.subtitle_font_size}px`;
+            previewBody.style.fontSize = `${state.body_font_size}px`;
+            previewBody.style.lineHeight = `${state.body_font_size + 4}px`;
+            previewBody.innerHTML = formatPreviewText(bodyInput.value.trim());
+
+            setBlockPosition(dragTitle, state.title_left_pct, state.title_top_pct);
+            setBlockPosition(dragSubtitle, state.subtitle_left_pct, state.subtitle_top_pct);
+            setBlockPosition(dragContent, state.content_left_pct, state.content_top_pct);
+
+            previewTitle.textContent = titleInput.value.trim() || "Titre de la fiche";
+            previewSubtitle.textContent = subtitleInput.value.trim() || "Sous-titre";
+
+            const minContentTop = state.header_height + 155;
+            const contentTopPx = Math.max((state.content_top_pct / 100) * 842, minContentTop);
+            state.content_top_pct = (contentTopPx / 842) * 100;
+
+            const metaTop = state.header_height + 14;
+            previewMeta.style.top = `${metaTop}px`;
+
+            syncLayoutJson();
+        }
+
+        function bindDrag(blockEl, leftKey, topKey) {
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let startLeft = 0;
+            let startTop = 0;
+
+            blockEl.addEventListener("pointerdown", (event) => {
+                dragging = true;
+                blockEl.setPointerCapture(event.pointerId);
+                startX = event.clientX;
+                startY = event.clientY;
+                startLeft = state[leftKey];
+                startTop = state[topKey];
+            });
+
+            blockEl.addEventListener("pointermove", (event) => {
+                if (!dragging) {
+                    return;
+                }
+                const rect = page.getBoundingClientRect();
+                const dxPct = ((event.clientX - startX) / rect.width) * 100;
+                const dyPct = ((event.clientY - startY) / rect.height) * 100;
+
+                const leftMaxByBlock = leftKey === "content_left_pct" ? 22 : 82;
+                const topMinByBlock = topKey === "content_top_pct" ? ((state.header_height + 155) / 842) * 100 : 4;
+                state[leftKey] = Math.max(4, Math.min(leftMaxByBlock, startLeft + dxPct));
+                state[topKey] = Math.max(topMinByBlock, Math.min(78, startTop + dyPct));
+                applyPreview();
+            });
+
+            blockEl.addEventListener("pointerup", () => {
+                dragging = false;
+            });
+        }
+
+        bindDrag(dragTitle, "title_left_pct", "title_top_pct");
+        bindDrag(dragSubtitle, "subtitle_left_pct", "subtitle_top_pct");
+        bindDrag(dragContent, "content_left_pct", "content_top_pct");
+
+        [titleInput, subtitleInput, bodyInput, themeInput].forEach((el) => {
+            el.addEventListener("input", applyPreview);
+            el.addEventListener("change", applyPreview);
+        });
+
+        document.getElementById("reset_layout").addEventListener("click", () => {
+            Object.keys(defaults).forEach((key) => {
+                state[key] = defaults[key];
+                if (ranges[key]) {
+                    ranges[key].value = defaults[key];
+                }
+            });
+            applyPreview();
+        });
+
+        applyPreview();
+    })();
+</script>
 {% endblock %}

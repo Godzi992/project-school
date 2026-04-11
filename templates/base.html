@@ -10,25 +10,98 @@
             darkMode: "class"
         };
     </script>
+    <style>
+        body,
+        header,
+        nav,
+        section,
+        article,
+        aside,
+        form,
+        input,
+        select,
+        textarea,
+        button,
+        a,
+        div {
+            transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease, box-shadow 220ms ease;
+        }
+
+        .theme-toggle-icon {
+            display: inline-flex;
+            transition: transform 260ms ease;
+        }
+
+        .theme-toggle:hover .theme-toggle-icon {
+            transform: rotate(18deg) scale(1.08);
+        }
+
+        body[data-density="compact"] .text-3xl {
+            font-size: 1.55rem !important;
+            line-height: 1.9rem !important;
+        }
+
+        body[data-density="compact"] .text-2xl {
+            font-size: 1.3rem !important;
+            line-height: 1.7rem !important;
+        }
+
+        body[data-density="compact"] .text-base {
+            font-size: 0.92rem !important;
+            line-height: 1.3rem !important;
+        }
+
+        body[data-density="compact"] .p-8,
+        body[data-density="compact"] .p-7,
+        body[data-density="compact"] .p-6,
+        body[data-density="compact"] .p-5,
+        body[data-density="compact"] .p-4 {
+            padding: 0.9rem !important;
+        }
+
+        body[data-density="compact"] .py-4 {
+            padding-top: 0.6rem !important;
+            padding-bottom: 0.6rem !important;
+        }
+
+        body[data-density="compact"] .py-3 {
+            padding-top: 0.45rem !important;
+            padding-bottom: 0.45rem !important;
+        }
+
+        body[data-density="compact"] .gap-6,
+        body[data-density="compact"] .gap-5,
+        body[data-density="compact"] .gap-4,
+        body[data-density="compact"] .gap-3 {
+            gap: 0.55rem !important;
+        }
+
+        body[data-density="compact"] input,
+        body[data-density="compact"] select,
+        body[data-density="compact"] textarea,
+        body[data-density="compact"] button {
+            font-size: 0.88rem !important;
+        }
+
+        body[data-density="compact"] main {
+            padding-top: 1.1rem !important;
+            padding-bottom: 1.2rem !important;
+        }
+    </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-orange-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
+<body data-density="{{ ui_density }}" class="min-h-screen bg-gradient-to-br from-teal-50 via-cyan-50 to-orange-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
     <header class="sticky top-0 z-40 border-b border-teal-200/60 bg-white/90 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
         <nav class="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-5 py-4">
             <a href="{{ url_for('index') }}" class="text-xl font-black tracking-wide text-teal-700 dark:text-cyan-300">Eco-Share</a>
             <div class="flex flex-wrap items-center gap-2 text-sm md:text-base">
+                <form method="POST" action="{{ url_for('toggle_theme') }}">
+                    <input type="hidden" name="next" value="{{ request.full_path }}">
+                    <button type="submit" class="theme-toggle rounded-full border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 dark:border-slate-500 dark:bg-slate-800 dark:text-slate-100">
+                        <span class="theme-toggle-icon mr-2" aria-hidden="true">{% if ui_theme == 'dark' %}SUN{% else %}MOON{% endif %}</span>
+                        {% if ui_theme == 'dark' %}Passer en jour{% else %}Passer en nuit{% endif %}
+                    </button>
+                </form>
                 {% if current_user.is_authenticated %}
-                    <form method="POST" action="{{ url_for('update_ui_settings') }}" class="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-300 bg-white px-2 py-1 dark:border-slate-600 dark:bg-slate-800">
-                        <input type="hidden" name="next" value="{{ request.full_path }}">
-                        <select name="ui_theme" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-500 dark:bg-slate-700 dark:text-slate-100">
-                            <option value="light" {% if ui_theme == 'light' %}selected{% endif %}>Jour</option>
-                            <option value="dark" {% if ui_theme == 'dark' %}selected{% endif %}>Nuit</option>
-                        </select>
-                        <select name="ui_density" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-500 dark:bg-slate-700 dark:text-slate-100">
-                            <option value="comfortable" {% if ui_density == 'comfortable' %}selected{% endif %}>UI grande</option>
-                            <option value="compact" {% if ui_density == 'compact' %}selected{% endif %}>UI compacte</option>
-                        </select>
-                        <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-cyan-600">Sauver</button>
-                    </form>
                     {% if current_user.role == 'admin' %}
                         <a href="{{ url_for('admin_dashboard') }}" class="rounded-full border border-amber-500 px-4 py-2 font-semibold text-amber-700 dark:text-amber-300">
                             Admin {% if new_reports_count > 0 %}({{ new_reports_count }}){% endif %}

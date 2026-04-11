@@ -1,10 +1,12 @@
 import os
 import re
 import uuid
+import ipaddress
+import json
 from datetime import datetime
 from xml.sax.saxutils import escape
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
@@ -18,7 +20,7 @@ try:
     from reportlab.lib.pagesizes import A4  # type: ignore[import-not-found]
     from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-not-found]
     from reportlab.pdfgen import canvas  # type: ignore[import-not-found]
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer  # type: ignore[import-not-found]
+    from reportlab.platypus import BaseDocTemplate, Frame, KeepInFrame, PageTemplate, Paragraph, Spacer  # type: ignore[import-not-found]
 except ImportError:
     colors = None
     TA_CENTER = None
@@ -26,6 +28,7 @@ except ImportError:
     ParagraphStyle = None
     BaseDocTemplate = None
     Frame = None
+    KeepInFrame = None
     PageTemplate = None
     Paragraph = None
     Spacer = None
@@ -129,9 +132,45 @@ class AccountAuditLog(db.Model):
     target_user = db.relationship("User", foreign_keys=[target_user_id], backref=db.backref("audit_events", lazy=True))
 
 
+class GuestThemePreference(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    ui_theme = db.Column(db.String(20), nullable=False, default="light")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
+
+
+def get_client_ip() -> str:
+    """Try to resolve the visitor public IP from proxy headers, then fallback to remote address."""
+    candidates = []
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        candidates.extend([part.strip() for part in xff.split(",") if part.strip()])
+
+    x_real_ip = request.headers.get("X-Real-IP", "").strip()
+    if x_real_ip:
+        candidates.append(x_real_ip)
+
+    remote = (request.remote_addr or "").strip()
+    if remote:
+        candidates.append(remote)
+
+    if not candidates:
+        return "unknown"
+
+    for candidate in candidates:
+        try:
+            parsed = ipaddress.ip_address(candidate)
+            if parsed.is_global:
+                return candidate
+        except ValueError:
+            continue
+
+    return candidates[0]
 
 
 @app.context_processor
@@ -144,6 +183,13 @@ def inject_globals():
     if current_user.is_authenticated:
         ui_theme = current_user.ui_theme or "light"
         ui_density = current_user.ui_density or "comfortable"
+    else:
+        client_ip = get_client_ip()
+        stored_pref = GuestThemePreference.query.filter_by(ip_address=client_ip).first()
+        if stored_pref and stored_pref.ui_theme in {"light", "dark"}:
+            ui_theme = stored_pref.ui_theme
+        else:
+            ui_theme = session.get("guest_ui_theme", "light")
     return {
         "SUBJECTS": SUBJECTS,
         "LEVELS": LEVELS,
@@ -152,6 +198,17 @@ def inject_globals():
         "ui_density": ui_density,
         "profile_image_url": profile_image_url,
     }
+
+
+def get_effective_theme() -> str:
+    if current_user.is_authenticated:
+        return current_user.ui_theme if current_user.ui_theme in {"light", "dark"} else "light"
+
+    client_ip = get_client_ip()
+    stored_pref = GuestThemePreference.query.filter_by(ip_address=client_ip).first()
+    if stored_pref and stored_pref.ui_theme in {"light", "dark"}:
+        return stored_pref.ui_theme
+    return session.get("guest_ui_theme", "light")
 
 
 def ensure_user_preferences_columns():
@@ -487,7 +544,74 @@ def parse_content_blocks(content: str):
     return blocks
 
 
-def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str, author_name: str, accent_hex: str):
+DEFAULT_PDF_STUDIO_SETTINGS = {
+    "header_height": 128,
+    "title_font_size": 22,
+    "subtitle_font_size": 11,
+    "body_font_size": 11,
+    "heading_font_size": 14,
+    "title_left_pct": 7.2,
+    "title_top_pct": 6.4,
+    "subtitle_left_pct": 7.2,
+    "subtitle_top_pct": 8.8,
+    "content_left_pct": 7.2,
+    "content_top_pct": 26.5,
+}
+
+
+def clamp_number(value, min_value: float, max_value: float, default: float):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(max_value, parsed))
+
+
+def parse_pdf_studio_settings(raw_layout: str | None):
+    settings = dict(DEFAULT_PDF_STUDIO_SETTINGS)
+    if not raw_layout:
+        return settings
+
+    try:
+        payload = json.loads(raw_layout)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return settings
+
+    if not isinstance(payload, dict):
+        return settings
+
+    settings["header_height"] = int(clamp_number(payload.get("header_height"), 90, 210, settings["header_height"]))
+    settings["title_font_size"] = int(clamp_number(payload.get("title_font_size"), 16, 34, settings["title_font_size"]))
+    settings["subtitle_font_size"] = int(
+        clamp_number(payload.get("subtitle_font_size"), 9, 20, settings["subtitle_font_size"])
+    )
+    settings["body_font_size"] = int(clamp_number(payload.get("body_font_size"), 9, 16, settings["body_font_size"]))
+    settings["heading_font_size"] = int(
+        clamp_number(payload.get("heading_font_size"), 11, 22, settings["heading_font_size"])
+    )
+
+    settings["title_left_pct"] = clamp_number(payload.get("title_left_pct"), 4.0, 75.0, settings["title_left_pct"])
+    settings["title_top_pct"] = clamp_number(payload.get("title_top_pct"), 4.0, 26.0, settings["title_top_pct"])
+    settings["subtitle_left_pct"] = clamp_number(
+        payload.get("subtitle_left_pct"), 4.0, 78.0, settings["subtitle_left_pct"]
+    )
+    settings["subtitle_top_pct"] = clamp_number(payload.get("subtitle_top_pct"), 6.0, 30.0, settings["subtitle_top_pct"])
+    settings["content_left_pct"] = clamp_number(
+        payload.get("content_left_pct"), 4.0, 30.0, settings["content_left_pct"]
+    )
+    settings["content_top_pct"] = clamp_number(payload.get("content_top_pct"), 22.0, 70.0, settings["content_top_pct"])
+    return settings
+
+
+def generate_stylish_pdf(
+    file_path: str,
+    title: str,
+    subtitle: str,
+    content: str,
+    author_name: str,
+    accent_hex: str,
+    studio_settings: dict | None = None,
+):
     if (
         colors is None
         or A4 is None
@@ -495,14 +619,20 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         or ParagraphStyle is None
         or BaseDocTemplate is None
         or Frame is None
+        or KeepInFrame is None
         or PageTemplate is None
         or Paragraph is None
         or Spacer is None
     ):
         raise RuntimeError("ReportLab non disponible")
 
+    settings = dict(DEFAULT_PDF_STUDIO_SETTINGS)
+    if studio_settings:
+        settings.update(studio_settings)
+
     page_width, page_height = A4
     margin = 42
+    header_height = int(settings["header_height"])
     accent = colors.HexColor(accent_hex)
     accent_soft = colors.Color(
         min(accent.red + 0.22, 1.0),
@@ -511,7 +641,6 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
     )
 
     def draw_page_header(pdf_canvas, page_number: int):
-        header_height = 128
         pdf_canvas.setFillColor(accent)
         pdf_canvas.rect(0, page_height - header_height, page_width, header_height, stroke=0, fill=1)
 
@@ -519,13 +648,18 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         pdf_canvas.circle(page_width - 48, page_height - 35, 55, stroke=0, fill=1)
         pdf_canvas.circle(page_width - 95, page_height - 78, 28, stroke=0, fill=1)
 
+        title_x = (settings["title_left_pct"] / 100.0) * page_width
+        title_y = page_height - ((settings["title_top_pct"] / 100.0) * page_height)
+        subtitle_x = (settings["subtitle_left_pct"] / 100.0) * page_width
+        subtitle_y = page_height - ((settings["subtitle_top_pct"] / 100.0) * page_height)
+
         pdf_canvas.setFillColor(colors.white)
-        pdf_canvas.setFont("Helvetica-Bold", 22)
-        pdf_canvas.drawString(margin, page_height - 54, title[:70])
+        pdf_canvas.setFont("Helvetica-Bold", int(settings["title_font_size"]))
+        pdf_canvas.drawString(title_x, title_y, title[:70])
 
         if subtitle:
-            pdf_canvas.setFont("Helvetica", 11)
-            pdf_canvas.drawString(margin, page_height - 74, subtitle[:110])
+            pdf_canvas.setFont("Helvetica", int(settings["subtitle_font_size"]))
+            pdf_canvas.drawString(subtitle_x, subtitle_y, subtitle[:110])
 
         pdf_canvas.setFont("Helvetica-Bold", 9)
         pdf_canvas.drawRightString(page_width - margin, page_height - 104, f"PAGE {page_number}")
@@ -540,12 +674,14 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         pdf_canvas.drawString(margin, 24, footer)
         pdf_canvas.drawRightString(page_width - margin, 24, "EcoShare - PDF Studio")
 
+    content_top_px = (settings["content_top_pct"] / 100.0) * page_height
+
     def draw_decorations(pdf_canvas, doc):
         draw_page_header(pdf_canvas, doc.page)
         draw_page_footer(pdf_canvas)
 
         if doc.page == 1:
-            metadata_top = page_height - 170
+            metadata_top = page_height - (header_height + 40)
             pdf_canvas.setFillColor(colors.HexColor("#f5f8fc"))
             pdf_canvas.roundRect(margin, metadata_top - 62, page_width - (2 * margin), 62, 8, stroke=0, fill=1)
             pdf_canvas.setFillColor(colors.HexColor("#1f2a44"))
@@ -560,7 +696,9 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
             )
             pdf_canvas.setFillColor(colors.HexColor("#1f2a44"))
             pdf_canvas.setFont("Helvetica-Bold", 13)
-            pdf_canvas.drawString(margin, metadata_top - 92, "Contenu")
+            content_label_x = (settings["content_left_pct"] / 100.0) * page_width
+            content_label_y = page_height - content_top_px + 12
+            pdf_canvas.drawString(content_label_x, content_label_y, "Contenu")
 
     document = BaseDocTemplate(
         file_path,
@@ -573,11 +711,22 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         bottomMargin=46,
     )
 
+    min_content_top_px = header_height + 155
+    safe_content_top_px = max(content_top_px, min_content_top_px)
+    first_frame_top_y = page_height - safe_content_top_px - 20
+
+    desired_frame_width = page_width * 0.76
+    preferred_left = (settings["content_left_pct"] / 100.0) * page_width
+    max_left_for_width = page_width - margin - desired_frame_width
+    first_frame_x = max(24, min(max_left_for_width, preferred_left))
+    first_frame_width = desired_frame_width
+    first_frame_height = max(150, first_frame_top_y - 46)
+
     first_frame = Frame(
-        margin,
+        first_frame_x,
         46,
-        page_width - (2 * margin),
-        page_height - 320,
+        first_frame_width,
+        first_frame_height,
         leftPadding=0,
         rightPadding=0,
         topPadding=0,
@@ -596,15 +745,14 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         id="later_frame",
     )
 
-    first_template = PageTemplate(id="first", frames=[first_frame], onPage=draw_decorations, autoNextPageTemplate="later")
-    later_template = PageTemplate(id="later", frames=[later_frame], onPage=draw_decorations)
-    document.addPageTemplates([first_template, later_template])
+    first_template = PageTemplate(id="first", frames=[first_frame], onPage=draw_decorations)
+    document.addPageTemplates([first_template])
 
     body_style = ParagraphStyle(
         "BodyStyle",
         fontName="Helvetica",
-        fontSize=11,
-        leading=15,
+        fontSize=int(settings["body_font_size"]),
+        leading=int(settings["body_font_size"]) + 4,
         textColor=colors.HexColor("#1f2a44"),
         spaceAfter=8,
     )
@@ -613,8 +761,8 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         "HeadingStyle",
         parent=body_style,
         fontName="Helvetica-Bold",
-        fontSize=14,
-        leading=18,
+        fontSize=int(settings["heading_font_size"]),
+        leading=int(settings["heading_font_size"]) + 4,
         spaceBefore=10,
         spaceAfter=6,
     )
@@ -631,8 +779,8 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         "MathStyle",
         parent=body_style,
         fontName="Courier-Bold",
-        fontSize=12,
-        leading=16,
+        fontSize=max(int(settings["body_font_size"]) + 1, 11),
+        leading=max(int(settings["body_font_size"]) + 5, 15),
         alignment=TA_CENTER,
         backColor=colors.HexColor("#eef3fb"),
         borderColor=colors.HexColor("#d8e2f0"),
@@ -676,7 +824,10 @@ def generate_stylish_pdf(file_path: str, title: str, subtitle: str, content: str
         story.append(Paragraph(render_custom_markup(text), body_style))
         story.append(Spacer(1, 6))
 
-    document.build(story)
+    single_page_story = [
+        KeepInFrame(first_frame_width, first_frame_height, story, mode="shrink")
+    ]
+    document.build(single_page_story)
 
 
 def simulate_ecole_directe_import():
@@ -803,6 +954,50 @@ def update_ui_settings():
     current_user.ui_density = density
     db.session.commit()
     flash("Preferences d'affichage mises a jour.", "success")
+    return redirect(next_url)
+
+
+@app.route("/theme/guest", methods=["POST"])
+def update_guest_theme():
+    theme = request.form.get("ui_theme", "light")
+    next_url = request.form.get("next") or request.referrer or url_for("login")
+
+    if theme not in {"light", "dark"}:
+        theme = "light"
+
+    client_ip = get_client_ip()
+    pref = GuestThemePreference.query.filter_by(ip_address=client_ip).first()
+    if pref is None:
+        pref = GuestThemePreference(ip_address=client_ip, ui_theme=theme)
+        db.session.add(pref)
+    else:
+        pref.ui_theme = theme
+    db.session.commit()
+
+    session["guest_ui_theme"] = theme
+    return redirect(next_url)
+
+
+@app.route("/theme/toggle", methods=["POST"])
+def toggle_theme():
+    next_url = request.form.get("next") or request.referrer or url_for("index")
+    current_theme = get_effective_theme()
+    new_theme = "dark" if current_theme == "light" else "light"
+
+    if current_user.is_authenticated:
+        current_user.ui_theme = new_theme
+        db.session.commit()
+        return redirect(next_url)
+
+    client_ip = get_client_ip()
+    pref = GuestThemePreference.query.filter_by(ip_address=client_ip).first()
+    if pref is None:
+        pref = GuestThemePreference(ip_address=client_ip, ui_theme=new_theme)
+        db.session.add(pref)
+    else:
+        pref.ui_theme = new_theme
+    db.session.commit()
+    session["guest_ui_theme"] = new_theme
     return redirect(next_url)
 
 
@@ -1053,6 +1248,8 @@ def create_stylish_pdf():
         level = request.form.get("level", "").strip()
         body = request.form.get("body", "").strip()
         theme = request.form.get("theme", "teal").strip()
+        layout_json = request.form.get("layout_json", "")
+        studio_settings = parse_pdf_studio_settings(layout_json)
 
         if current_user.role == "eleve":
             level = current_user.school_class
@@ -1080,6 +1277,7 @@ def create_stylish_pdf():
             content=body,
             author_name=current_user.username,
             accent_hex=palette[theme],
+            studio_settings=studio_settings,
         )
 
         resource = Resource(
@@ -1100,6 +1298,7 @@ def create_stylish_pdf():
         "create_pdf.html",
         default_subject=default_subject,
         default_level=default_level,
+        default_studio_settings=DEFAULT_PDF_STUDIO_SETTINGS,
     )
 
 
