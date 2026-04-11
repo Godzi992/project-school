@@ -5,25 +5,26 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">PDF Studio</h1>
-            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Apercu en direct, deplacement des blocs et personnalisation avancee avant export.</p>
+            <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Cree des cartes mentales et schemas de revision avec apercu en direct avant export PDF.</p>
         </div>
-        <a href="{{ url_for('upload') }}" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-600">Retour upload</a>
+        <a href="{{ url_for('index') }}" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-600">Retour accueil</a>
     </div>
 
     <form method="POST" class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-12">
         <input type="hidden" id="layout_json" name="layout_json" value="">
+        <input type="hidden" id="mindmap_image_data" name="mindmap_image_data" value="">
 
         <div class="space-y-4 xl:col-span-5">
             <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
-                <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Infos fiche</h2>
+                <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Infos creation</h2>
                 <div class="space-y-3">
                     <div>
                         <label for="title" class="mb-1 block text-sm font-semibold">Titre</label>
-                        <input id="title" name="title" required minlength="4" maxlength="90" placeholder="Ex: Fonctions lineaires - fiche complete" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                        <input id="title" name="title" required minlength="4" maxlength="90" placeholder="Ex: Carte mentale - Fonctions lineaires" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
                     </div>
                     <div>
                         <label for="subtitle" class="mb-1 block text-sm font-semibold">Sous-titre (optionnel)</label>
-                        <input id="subtitle" name="subtitle" maxlength="140" placeholder="Ex: Resume + exercices corriges" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                        <input id="subtitle" name="subtitle" maxlength="140" placeholder="Ex: Resume visuel pour revisions rapides" class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
                     </div>
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
                         <div>
@@ -65,7 +66,7 @@
 
             <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
                 <h2 class="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Contenu</h2>
-                <textarea id="body" name="body" required minlength="40" rows="11" placeholder="Ecris ici ton cours, tes definitions, methodes et exercices..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
+                <textarea id="body" name="body" required minlength="40" rows="11" placeholder="Ecris ici ta carte mentale: idees cles, liens, schema logique, etapes..." class="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
                 <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Tu peux glisser les blocs Titre, Sous-titre et Contenu dans l'apercu a droite.</p>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Mise en forme: §mot§ ou **mot** (gras), *mot* (italique), $f(x)=ax$ ou $$a=\frac{f(x)}{x}$$ (formules).</p>
             </div>
@@ -92,7 +93,7 @@
                 <button id="reset_layout" type="button" class="mt-3 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-slate-600">Reset placement</button>
             </div>
 
-            <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer ma fiche PDF</button>
+            <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer et telecharger le PDF</button>
         </div>
 
         <div class="xl:col-span-7">
@@ -107,7 +108,7 @@
                     <div id="preview-shape-b" class="absolute rounded-full bg-white/30"></div>
 
                     <div id="drag-title" data-block="title" class="studio-draggable absolute z-20 cursor-move rounded-md border border-dashed border-white/70 bg-black/15 px-2 py-1 text-white">
-                        <div id="preview-title" class="font-bold">Titre de la fiche</div>
+                        <div id="preview-title" class="font-bold">Titre de la carte</div>
                     </div>
 
                     <div id="drag-subtitle" data-block="subtitle" class="studio-draggable absolute z-20 cursor-move rounded-md border border-dashed border-white/70 bg-black/15 px-2 py-1 text-white/95">
@@ -115,13 +116,18 @@
                     </div>
 
                     <div id="preview-meta" class="absolute left-[7%] rounded-lg bg-slate-100 px-3 py-2 text-[10px] text-slate-700">
-                        <div class="font-bold tracking-wide">FICHE PEDAGOGIQUE</div>
+                        <div class="font-bold tracking-wide">CARTE DE REVISION</div>
                         <div class="mt-1">Auteur: {{ current_user.username }}</div>
                     </div>
 
                     <div id="drag-content" data-block="content" class="studio-draggable absolute z-20 w-[72%] cursor-move rounded-md border border-dashed border-slate-400 bg-white/75 px-2 py-1">
                         <div class="text-[11px] font-bold text-slate-700">Contenu</div>
                         <div id="preview-body" class="mt-1 max-h-[430px] overflow-auto text-[11px] leading-relaxed text-slate-700"></div>
+                    </div>
+
+                    <div id="preview-map-image-wrap" class="absolute right-[7%] top-[30%] hidden w-[28%] rounded-lg border border-slate-300 bg-white/95 p-1 shadow">
+                        <img id="preview-map-image" alt="Apercu carte mentale" class="max-h-[190px] w-full rounded object-cover">
+                        <div class="mt-1 text-center text-[10px] font-semibold text-slate-600">Image importee depuis MindMap</div>
                     </div>
 
                     <div class="absolute bottom-0 left-0 w-full border-t border-slate-300 px-8 py-2 text-[10px] text-slate-500">EcoShare - PDF Studio</div>
@@ -150,6 +156,7 @@
         const bodyInput = document.getElementById("body");
         const themeInput = document.getElementById("theme");
         const layoutInput = document.getElementById("layout_json");
+        const mindmapImageInput = document.getElementById("mindmap_image_data");
         const page = document.getElementById("pdf-preview-page");
 
         const previewHeader = document.getElementById("preview-header");
@@ -159,6 +166,8 @@
         const previewSubtitle = document.getElementById("preview-subtitle");
         const previewBody = document.getElementById("preview-body");
         const previewMeta = document.getElementById("preview-meta");
+        const previewMapImageWrap = document.getElementById("preview-map-image-wrap");
+        const previewMapImage = document.getElementById("preview-map-image");
 
         const dragTitle = document.getElementById("drag-title");
         const dragSubtitle = document.getElementById("drag-subtitle");
@@ -174,6 +183,37 @@
                 applyPreview();
             });
         });
+
+        function hydrateFromMindmapIfNeeded() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("from_mindmap") !== "1") {
+                return;
+            }
+            const raw = localStorage.getItem("mindmap_to_pdf_payload");
+            if (!raw) {
+                return;
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                if ((parsed.title || "").trim() && !titleInput.value.trim()) {
+                    titleInput.value = parsed.title.trim().slice(0, 90);
+                }
+                if ((parsed.subtitle || "").trim() && !subtitleInput.value.trim()) {
+                    subtitleInput.value = parsed.subtitle.trim().slice(0, 140);
+                }
+                if ((parsed.body || "").trim() && !bodyInput.value.trim()) {
+                    bodyInput.value = parsed.body.trim();
+                }
+                const importedImage = (parsed.mindmap_image_data || "").trim();
+                if (importedImage.startsWith("data:image/")) {
+                    mindmapImageInput.value = importedImage;
+                    previewMapImage.src = importedImage;
+                    previewMapImageWrap.classList.remove("hidden");
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
 
         function escapeHtml(value) {
             return value
@@ -239,7 +279,7 @@
             setBlockPosition(dragSubtitle, state.subtitle_left_pct, state.subtitle_top_pct);
             setBlockPosition(dragContent, state.content_left_pct, state.content_top_pct);
 
-            previewTitle.textContent = titleInput.value.trim() || "Titre de la fiche";
+            previewTitle.textContent = titleInput.value.trim() || "Titre de la carte";
             previewSubtitle.textContent = subtitleInput.value.trim() || "Sous-titre";
 
             const minContentTop = state.header_height + 155;
@@ -307,6 +347,7 @@
             applyPreview();
         });
 
+        hydrateFromMindmapIfNeeded();
         applyPreview();
     })();
 </script>

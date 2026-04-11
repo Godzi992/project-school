@@ -3,10 +3,12 @@ import re
 import uuid
 import ipaddress
 import json
+import base64
+from io import BytesIO
 from datetime import datetime
 from xml.sax.saxutils import escape
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
@@ -20,7 +22,7 @@ try:
     from reportlab.lib.pagesizes import A4  # type: ignore[import-not-found]
     from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-not-found]
     from reportlab.pdfgen import canvas  # type: ignore[import-not-found]
-    from reportlab.platypus import BaseDocTemplate, Frame, KeepInFrame, PageTemplate, Paragraph, Spacer  # type: ignore[import-not-found]
+    from reportlab.platypus import BaseDocTemplate, Frame, KeepInFrame, PageTemplate, Paragraph, Spacer, Image as RLImage  # type: ignore[import-not-found]
 except ImportError:
     colors = None
     TA_CENTER = None
@@ -32,6 +34,7 @@ except ImportError:
     PageTemplate = None
     Paragraph = None
     Spacer = None
+    RLImage = None
     canvas = None
 
 try:
@@ -137,6 +140,20 @@ class GuestThemePreference(db.Model):
     ip_address = db.Column(db.String(64), unique=True, nullable=False, index=True)
     ui_theme = db.Column(db.String(20), nullable=False, default="light")
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MindmapPublication(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(140), nullable=False)
+    subject = db.Column(db.String(60), nullable=False)
+    level = db.Column(db.String(20), nullable=False)
+    payload_json = db.Column(db.Text, nullable=False)
+    preview_image_data = db.Column(db.Text, nullable=False, default="")
+    share_token = db.Column(db.String(40), unique=True, nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    created_by = db.relationship("User", backref=db.backref("published_mindmaps", lazy=True))
 
 
 @login_manager.user_loader
@@ -611,6 +628,7 @@ def generate_stylish_pdf(
     author_name: str,
     accent_hex: str,
     studio_settings: dict | None = None,
+    mindmap_image_data: str = "",
 ):
     if (
         colors is None
@@ -623,6 +641,7 @@ def generate_stylish_pdf(
         or PageTemplate is None
         or Paragraph is None
         or Spacer is None
+        or RLImage is None
     ):
         raise RuntimeError("ReportLab non disponible")
 
@@ -793,6 +812,34 @@ def generate_stylish_pdf(
 
     content_blocks = parse_content_blocks(content)
     story = []
+
+    if mindmap_image_data.startswith("data:image/"):
+        image_bytes = None
+        try:
+            _, encoded = mindmap_image_data.split(",", 1)
+            image_bytes = base64.b64decode(encoded)
+        except (ValueError, base64.binascii.Error):
+            image_bytes = None
+
+        if image_bytes and len(image_bytes) <= 5_000_000:
+            try:
+                image_stream = BytesIO(image_bytes)
+                preview_image = RLImage(image_stream)
+                max_img_width = first_frame_width
+                max_img_height = min(220, first_frame_height * 0.38)
+                preview_image._restrictSize(max_img_width, max_img_height)
+                story.append(
+                    Paragraph(
+                        "<font color='#1f2a44'><b>Apercu de la carte mentale importee</b></font>",
+                        body_style,
+                    )
+                )
+                story.append(Spacer(1, 6))
+                story.append(preview_image)
+                story.append(Spacer(1, 10))
+            except Exception:
+                pass
+
     story.append(
         Paragraph(
             "<font color='#4f5b70'><i>Astuce: utilisez §texte§ ou **texte** pour le gras, *texte* pour l'italique et $...$ ou $$...$$ pour les formules.</i></font>",
@@ -898,8 +945,11 @@ def synchronize_accounts_from_ecole_directe():
     return created, updated
 
 
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def index():
+    if request.method == "POST":
+        return redirect(url_for("index"))
+
     if not current_user.is_authenticated:
         return redirect(url_for("login"))
 
@@ -1112,6 +1162,9 @@ def update_profile_photo():
 @app.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():
+    flash("L'atelier schemas est desactive.", "error")
+    return redirect(url_for("index"))
+
     prefill_subject = request.args.get("subject", "").strip()
     prefill_level = request.args.get("level", "").strip()
 
@@ -1202,6 +1255,9 @@ def upload():
 @app.route("/upload/quick")
 @login_required
 def quick_upload():
+    flash("L'atelier schemas est desactive.", "error")
+    return redirect(url_for("index"))
+
     last_resource = (
         Resource.query.filter_by(uploaded_by_id=current_user.id, is_removed=False)
         .order_by(Resource.created_at.desc())
@@ -1249,6 +1305,7 @@ def create_stylish_pdf():
         body = request.form.get("body", "").strip()
         theme = request.form.get("theme", "teal").strip()
         layout_json = request.form.get("layout_json", "")
+        mindmap_image_data = request.form.get("mindmap_image_data", "").strip()
         studio_settings = parse_pdf_studio_settings(layout_json)
 
         if current_user.role == "eleve":
@@ -1278,27 +1335,125 @@ def create_stylish_pdf():
             author_name=current_user.username,
             accent_hex=palette[theme],
             studio_settings=studio_settings,
+            mindmap_image_data=mindmap_image_data,
         )
 
-        resource = Resource(
-            filename=unique_name,
-            original_filename=f"{safe_title}.pdf",
-            filetype="pdf",
-            subject=subject,
-            level=level,
-            uploaded_by_id=current_user.id,
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"{safe_title}.pdf",
+            mimetype="application/pdf",
         )
-        db.session.add(resource)
-        db.session.commit()
-
-        flash("PDF cree et ajoute a vos ressources.", "success")
-        return redirect(url_for("my_resources"))
 
     return render_template(
         "create_pdf.html",
         default_subject=default_subject,
         default_level=default_level,
         default_studio_settings=DEFAULT_PDF_STUDIO_SETTINGS,
+    )
+
+
+@app.route("/mindmap-studio")
+@login_required
+def mindmap_studio():
+    published_token = (request.args.get("published") or "").strip()
+    published_payload = None
+    published_meta = None
+    if published_token:
+        publication = MindmapPublication.query.filter_by(share_token=published_token).first()
+        if publication:
+            try:
+                parsed_payload = json.loads(publication.payload_json)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed_payload = {}
+
+            published_payload = {
+                "cards": parsed_payload.get("cards", []),
+                "edges": parsed_payload.get("edges", []),
+                "showGrid": parsed_payload.get("showGrid", True),
+                "zoom": parsed_payload.get("zoom", 1),
+            }
+            published_meta = {
+                "title": publication.title,
+                "subject": publication.subject,
+                "level": publication.level,
+                "author": publication.created_by.username if publication.created_by else "inconnu",
+                "created_at": publication.created_at.isoformat() if publication.created_at else "",
+            }
+        else:
+            flash("Publication MindMap introuvable.", "error")
+
+    return render_template(
+        "mindmap_studio.html",
+        published_payload=published_payload,
+        published_meta=published_meta,
+    )
+
+
+@app.route("/mindmap/public/<string:share_token>")
+@login_required
+def mindmap_public_view(share_token):
+    flash("Le partage de MindMap est desactive.", "error")
+    return redirect(url_for("mindmap_studio"))
+
+
+@app.route("/mindmap/publish", methods=["POST"])
+@login_required
+def publish_mindmap():
+    return jsonify({"ok": False, "error": "La publication de MindMap est desactivee."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Payload invalide."}), 400
+
+    title = str(payload.get("title", "")).strip()[:140]
+    subject = str(payload.get("subject", "")).strip()
+    level = str(payload.get("level", "")).strip()
+    cards = payload.get("cards", [])
+    edges = payload.get("edges", [])
+    show_grid = bool(payload.get("showGrid", True))
+    zoom = clamp_number(payload.get("zoom"), 0.45, 2.1, 1.0)
+    preview_image_data = str(payload.get("preview_image_data", "")).strip()
+
+    if len(title) < 3:
+        return jsonify({"ok": False, "error": "Titre trop court (minimum 3 caracteres)."}), 400
+    if subject not in SUBJECTS or level not in LEVELS:
+        return jsonify({"ok": False, "error": "Matiere ou niveau invalide."}), 400
+    if not isinstance(cards, list) or not cards:
+        return jsonify({"ok": False, "error": "Ajoutez au moins une carte avant publication."}), 400
+    if not isinstance(edges, list):
+        edges = []
+    if preview_image_data and not preview_image_data.startswith("data:image/"):
+        preview_image_data = ""
+    if len(preview_image_data) > 7_000_000:
+        preview_image_data = ""
+
+    safe_payload = {
+        "cards": cards,
+        "edges": edges,
+        "showGrid": show_grid,
+        "zoom": zoom,
+    }
+    share_token = uuid.uuid4().hex[:14]
+
+    publication = MindmapPublication(
+        title=title,
+        subject=subject,
+        level=level,
+        payload_json=json.dumps(safe_payload, ensure_ascii=True),
+        preview_image_data=preview_image_data,
+        share_token=share_token,
+        created_by_id=current_user.id,
+    )
+    db.session.add(publication)
+    db.session.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "share_url": url_for("mindmap_public_view", share_token=share_token, _external=True),
+            "open_url": url_for("mindmap_studio", published=share_token),
+        }
     )
 
 

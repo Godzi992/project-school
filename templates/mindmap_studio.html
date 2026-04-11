@@ -1,0 +1,1189 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-lg dark:border-slate-700 dark:bg-slate-900 md:p-6">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">MindMap Studio</h1>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Vrai espace carte mentale: cartes colorees, edition complete, image optionnelle + description.</p>
+        </div>
+    </div>
+
+    <div class="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <aside class="space-y-3 xl:col-span-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/70">
+                <p class="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Outils</p>
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <button id="add-card" type="button" class="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">+ Carte</button>
+                    <button id="connect-mode" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Mode lien</button>
+                    <button id="delete-card" type="button" class="rounded-xl border border-rose-400 px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-300">Supprimer</button>
+                    <button id="duplicate-card" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Dupliquer</button>
+                    <button id="reset-map" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Reset</button>
+                    <button id="toggle-grid" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Grille ON/OFF</button>
+                    <button id="export-map" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Export JSON</button>
+                </div>
+                <p id="status-line" class="mt-3 text-xs text-slate-500 dark:text-slate-400">Astuce: Ctrl + molette pour zoom, glisse la grille pour deplacer la vue.</p>
+            </div>
+
+            <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <p class="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Carte selectionnee</p>
+                <div id="empty-selection" class="mt-3 text-xs text-slate-500 dark:text-slate-400">Aucune carte selectionnee.</div>
+
+                <div id="card-editor" class="mt-3 hidden space-y-3">
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Type de carte</label>
+                        <select id="card-type" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                            <option value="full">Complete (titre + texte + image)</option>
+                            <option value="title_only">Titre uniquement</option>
+                            <option value="title_image">Titre + image</option>
+                            <option value="image_only">Image uniquement</option>
+                            <option value="description_only">Texte uniquement</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Titre</label>
+                        <input id="card-title" type="text" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Description</label>
+                        <textarea id="card-description" rows="3" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold">Couleur vive</label>
+                            <input id="card-color" type="color" value="#22c55e" class="h-10 w-full rounded-xl border border-slate-300 px-1 dark:border-slate-600 dark:bg-slate-800">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold">Taille</label>
+                            <p class="rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">Fais glisser les bords de la carte (double fleche) pour redimensionner.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Image (optionnelle)</label>
+                        <input id="card-image" type="file" accept="image/*" class="w-full rounded-xl border border-slate-300 p-2 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Description image</label>
+                        <input id="card-image-caption" type="text" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" placeholder="Ex: Schema respiration cellulaire">
+                    </div>
+                    <button id="remove-image" type="button" class="w-full rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-700 dark:border-rose-700 dark:text-rose-300">Retirer l'image</button>
+                </div>
+
+                <div id="edge-editor" class="mt-3 hidden space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Lien selectionne</p>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Etiquette</label>
+                        <input id="edge-label" type="text" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" placeholder="Ex: cause, exemple, oui/non">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold">Couleur du lien</label>
+                            <input id="edge-color" type="color" value="#0f172a" class="h-10 w-full rounded-xl border border-slate-300 px-1 dark:border-slate-600 dark:bg-slate-800">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-semibold">Epaisseur</label>
+                            <input id="edge-width" type="range" min="4" max="16" step="1" class="mt-2 w-full">
+                        </div>
+                    </div>
+                    <button id="delete-edge" type="button" class="w-full rounded-xl border border-rose-300 px-3 py-2 text-xs font-bold text-rose-700 dark:border-rose-700 dark:text-rose-300">Supprimer le lien</button>
+                </div>
+            </div>
+
+            <div class="rounded-2xl border border-slate-200 p-4 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                Toutes les modifications sont sauvegardees automatiquement dans le navigateur.
+            </div>
+        </aside>
+
+        <div class="xl:col-span-8">
+            <div class="mb-2 flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold text-slate-500 dark:text-slate-300">Fond blanc, cartes colorees. Place, relie, ajoute image + description.</p>
+                <div class="flex items-center gap-2">
+                    <button id="zoom-out" type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold dark:border-slate-600 dark:bg-slate-900">-</button>
+                    <span id="zoom-label" class="w-12 text-center text-xs font-semibold">100%</span>
+                    <button id="zoom-in" type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold dark:border-slate-600 dark:bg-slate-900">+</button>
+                    <button id="zoom-reset" type="button" class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-bold dark:border-slate-600 dark:bg-slate-900">Reset vue</button>
+                </div>
+            </div>
+
+            <div id="mindmap-canvas" class="relative h-[74vh] min-h-[540px] overflow-auto rounded-2xl border border-slate-300 bg-white dark:border-slate-500 dark:bg-slate-100">
+                <div id="workspace" class="relative origin-top-left" style="width: 3200px; height: 2100px;">
+                    <div id="grid-layer" class="pointer-events-none absolute inset-0 opacity-80" style="background-size: 28px 28px; background-image: linear-gradient(to right, rgba(100,116,139,0.32) 1px, transparent 1px), linear-gradient(to bottom, rgba(100,116,139,0.32) 1px, transparent 1px);"></div>
+                    <svg id="edges-layer" class="absolute inset-0 h-full w-full" aria-hidden="true">
+                        <defs>
+                            <marker id="arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+                                <polygon points="0,0 12,4 0,8" fill="#0f172a"></polygon>
+                            </marker>
+                        </defs>
+                    </svg>
+                    <div id="cards-layer" class="absolute inset-0"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script id="published-mindmap-payload" type="application/json">{{ (published_payload or {})|tojson }}</script>
+<script id="published-mindmap-meta" type="application/json">{{ (published_meta or {})|tojson }}</script>
+<script>
+    (function () {
+        const STORAGE_KEY = "mindmap_studio_state_v2";
+        const WORKSPACE_WIDTH = 3200;
+        const WORKSPACE_HEIGHT = 2100;
+
+        const vividColors = [
+            "#ef4444",
+            "#f97316",
+            "#eab308",
+            "#22c55e",
+            "#06b6d4",
+            "#3b82f6",
+            "#8b5cf6",
+            "#ec4899"
+        ];
+
+        const canvas = document.getElementById("mindmap-canvas");
+        const workspace = document.getElementById("workspace");
+        const gridLayer = document.getElementById("grid-layer");
+        const edgesLayer = document.getElementById("edges-layer");
+        const cardsLayer = document.getElementById("cards-layer");
+
+        const statusLine = document.getElementById("status-line");
+        const addCardBtn = document.getElementById("add-card");
+        const connectModeBtn = document.getElementById("connect-mode");
+        const deleteCardBtn = document.getElementById("delete-card");
+        const duplicateCardBtn = document.getElementById("duplicate-card");
+        const resetMapBtn = document.getElementById("reset-map");
+        const toggleGridBtn = document.getElementById("toggle-grid");
+        const exportMapBtn = document.getElementById("export-map");
+
+        const zoomOutBtn = document.getElementById("zoom-out");
+        const zoomInBtn = document.getElementById("zoom-in");
+        const zoomResetBtn = document.getElementById("zoom-reset");
+        const zoomLabel = document.getElementById("zoom-label");
+
+        const cardEditor = document.getElementById("card-editor");
+        const emptySelection = document.getElementById("empty-selection");
+        const cardTypeInput = document.getElementById("card-type");
+        const cardTitleInput = document.getElementById("card-title");
+        const cardDescriptionInput = document.getElementById("card-description");
+        const cardColorInput = document.getElementById("card-color");
+        const cardImageInput = document.getElementById("card-image");
+        const cardImageCaptionInput = document.getElementById("card-image-caption");
+        const removeImageBtn = document.getElementById("remove-image");
+        const edgeEditor = document.getElementById("edge-editor");
+        const edgeLabelInput = document.getElementById("edge-label");
+        const edgeColorInput = document.getElementById("edge-color");
+        const edgeWidthInput = document.getElementById("edge-width");
+        const deleteEdgeBtn = document.getElementById("delete-edge");
+
+        const state = {
+            cards: [],
+            edges: [],
+            selectedCardId: null,
+            selectedEdgeId: null,
+            connectMode: false,
+            connectFromId: null,
+            showGrid: true,
+            zoom: 1,
+        };
+
+        function uid(prefix) {
+            return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
+        }
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function normalizeCardType(rawType) {
+            const allowed = new Set(["full", "title_only", "title_image", "image_only", "description_only"]);
+            return allowed.has(rawType) ? rawType : "full";
+        }
+
+        function setStatus(text) {
+            statusLine.textContent = text;
+        }
+
+        function getCardById(cardId) {
+            return state.cards.find((card) => card.id === cardId);
+        }
+
+        function applyDecor() {
+            workspace.style.transform = `scale(${state.zoom})`;
+            gridLayer.style.display = state.showGrid ? "block" : "none";
+            zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+        }
+
+        function buildMindmapPdfText() {
+            const lines = [];
+            const byId = new Map(state.cards.map((card) => [card.id, card]));
+
+            state.cards.forEach((card, index) => {
+                lines.push(`${index + 1}. ${card.title || "Carte"}`);
+                if ((card.description || "").trim()) {
+                    lines.push(`- ${card.description.trim()}`);
+                }
+                if ((card.imageCaption || "").trim()) {
+                    lines.push(`- Image: ${card.imageCaption.trim()}`);
+                }
+            });
+
+            if (state.edges.length) {
+                lines.push("");
+                lines.push("Relations:");
+                state.edges.forEach((edge) => {
+                    const from = byId.get(edge.from);
+                    const to = byId.get(edge.to);
+                    if (!from || !to) {
+                        return;
+                    }
+                    const label = (edge.label || "").trim();
+                    lines.push(`- ${from.title || "Carte"} -> ${to.title || "Carte"}${label ? ` (${label})` : ""}`);
+                });
+            }
+
+            return lines.join("\n").trim();
+        }
+
+        async function captureMindmapImageData() {
+            if (!window.html2canvas || !state.cards.length) {
+                return "";
+            }
+
+            let minX = Number.POSITIVE_INFINITY;
+            let minY = Number.POSITIVE_INFINITY;
+            let maxX = 0;
+            let maxY = 0;
+
+            state.cards.forEach((card) => {
+                minX = Math.min(minX, card.x);
+                minY = Math.min(minY, card.y);
+                maxX = Math.max(maxX, card.x + card.width);
+                maxY = Math.max(maxY, card.y + card.height);
+            });
+
+            if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+                return "";
+            }
+
+            const margin = 60;
+            const cropX = Math.max(0, minX - margin);
+            const cropY = Math.max(0, minY - margin);
+            const cropW = Math.min(WORKSPACE_WIDTH - cropX, (maxX - minX) + (margin * 2));
+            const cropH = Math.min(WORKSPACE_HEIGHT - cropY, (maxY - minY) + (margin * 2));
+            if (cropW < 40 || cropH < 40) {
+                return "";
+            }
+
+            const scale = Math.min(1.2, 1800 / Math.max(cropW, cropH));
+            const snap = await window.html2canvas(workspace, {
+                backgroundColor: "#f8fafc",
+                x: cropX,
+                y: cropY,
+                width: cropW,
+                height: cropH,
+                scale: Math.max(0.8, scale),
+                useCORS: true,
+            });
+            return snap.toDataURL("image/jpeg", 0.85);
+        }
+
+        function ensureEdge(fromId, toId) {
+            if (!fromId || !toId || fromId === toId) {
+                return false;
+            }
+            const exists = state.edges.some((edge) => edge.from === fromId && edge.to === toId);
+            if (exists) {
+                return false;
+            }
+            state.edges.push({
+                id: uid("edge"),
+                from: fromId,
+                to: toId,
+                color: "#0f172a",
+                width: 6,
+                label: "",
+            });
+            return true;
+        }
+
+        function saveState() {
+            const payload = {
+                cards: state.cards,
+                edges: state.edges,
+                showGrid: state.showGrid,
+                zoom: state.zoom,
+            };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        }
+
+        function hydrateCard(card) {
+            return {
+                id: card.id || uid("card"),
+                x: clamp(Number(card.x) || 100, 0, WORKSPACE_WIDTH - 140),
+                y: clamp(Number(card.y) || 100, 0, WORKSPACE_HEIGHT - 140),
+                title: card.title || "Nouvelle carte",
+                description: card.description || "",
+                color: card.color || vividColors[0],
+                width: clamp(Number(card.width || card.size) || 170, 130, 420),
+                height: clamp(Number(card.height || card.size) || 170, 110, 360),
+                type: normalizeCardType(card.type),
+                imageData: card.imageData || "",
+                imageCaption: card.imageCaption || "",
+            };
+        }
+
+        function loadState() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) {
+                createCard(120, 120, "Theme principal", {
+                    color: "#3b82f6",
+                    size: 210,
+                    description: "Glisse les cartes, relie-les et ajoute des images si besoin.",
+                });
+                createCard(460, 280, "Sous-idee", {
+                    color: "#22c55e",
+                    size: 180,
+                });
+                ensureEdge(state.cards[0].id, state.cards[1].id);
+                saveState();
+                return;
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed.cards)) {
+                    state.cards = parsed.cards.map(hydrateCard);
+                }
+                if (Array.isArray(parsed.edges)) {
+                    state.edges = parsed.edges.filter((edge) => edge.from && edge.to).map((edge) => ({
+                        id: edge.id || uid("edge"),
+                        from: edge.from,
+                        to: edge.to,
+                        color: edge.color || "#0f172a",
+                        width: clamp(Number(edge.width) || 6, 4, 16),
+                        label: edge.label || "",
+                    }));
+                }
+                state.showGrid = parsed.showGrid !== false;
+                state.zoom = clamp(Number(parsed.zoom) || 1, 0.45, 2.1);
+            } catch (error) {
+                console.error(error);
+                state.cards = [];
+                state.edges = [];
+                createCard(120, 120, "Carte mentale");
+            }
+        }
+
+        function createCard(x, y, title, options = {}) {
+            const width = clamp(Number(options.width || options.size) || 170, 130, 420);
+            const height = clamp(Number(options.height || options.size) || 170, 110, 360);
+            const card = {
+                id: uid("card"),
+                x: clamp(Number(x) || 100, 0, WORKSPACE_WIDTH - width),
+                y: clamp(Number(y) || 100, 0, WORKSPACE_HEIGHT - height),
+                title: title || "Nouvelle carte",
+                description: options.description || "",
+                color: options.color || vividColors[Math.floor(Math.random() * vividColors.length)],
+                width,
+                height,
+                type: normalizeCardType(options.type),
+                imageData: options.imageData || "",
+                imageCaption: options.imageCaption || "",
+            };
+            state.cards.push(card);
+            state.selectedCardId = card.id;
+            saveState();
+            render();
+        }
+
+        function duplicateSelectedCard() {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                setStatus("Selectionne une carte a dupliquer.");
+                return;
+            }
+            createCard(card.x + 32, card.y + 32, `${card.title} copie`, {
+                color: card.color,
+                width: card.width,
+                height: card.height,
+                type: card.type,
+                description: card.description,
+                imageData: card.imageData,
+                imageCaption: card.imageCaption,
+            });
+            setStatus("Carte dupliquee.");
+        }
+
+        function deleteSelectedCard() {
+            if (!state.selectedCardId) {
+                return;
+            }
+            const target = state.selectedCardId;
+            state.cards = state.cards.filter((card) => card.id !== target);
+            state.edges = state.edges.filter((edge) => edge.from !== target && edge.to !== target);
+            state.selectedCardId = null;
+            state.selectedEdgeId = null;
+            state.connectFromId = null;
+            saveState();
+            render();
+        }
+
+        function selectEdge(edgeId) {
+            state.selectedEdgeId = edgeId;
+            state.selectedCardId = null;
+            renderEditor();
+            renderEdges();
+        }
+
+        function deleteSelectedEdge() {
+            if (!state.selectedEdgeId) {
+                return;
+            }
+            const targetId = state.selectedEdgeId;
+            state.edges = state.edges.filter((edge) => edge.id !== targetId);
+            state.selectedEdgeId = null;
+            saveState();
+            renderEditor();
+            renderEdges();
+        }
+
+        function onCardClick(cardId) {
+            if (state.connectMode) {
+                if (!state.connectFromId) {
+                    state.connectFromId = cardId;
+                    setStatus("Choisis maintenant la carte cible.");
+                    render();
+                    return;
+                }
+
+                if (state.connectFromId !== cardId) {
+                    if (ensureEdge(state.connectFromId, cardId)) {
+                        setStatus("Lien ajoute.");
+                    } else {
+                        setStatus("Lien deja existant.");
+                    }
+                }
+
+                state.connectFromId = null;
+                saveState();
+                render();
+                return;
+            }
+
+            state.selectedCardId = cardId;
+            state.selectedEdgeId = null;
+            renderEditor();
+            render();
+        }
+
+        function createCardElement(card) {
+            const root = document.createElement("div");
+            root.className = "absolute cursor-move border-2 border-slate-900/10 bg-white shadow-md";
+            root.style.left = `${card.x}px`;
+            root.style.top = `${card.y}px`;
+            root.style.width = `${card.width}px`;
+            root.style.minHeight = `${card.height}px`;
+            root.style.borderRadius = "14px";
+            root.style.borderColor = card.color;
+            root.style.background = "#ffffff";
+            root.dataset.id = card.id;
+
+            const cardType = normalizeCardType(card.type);
+            const hasHeader = cardType !== "image_only" && cardType !== "description_only";
+            const showDescription = cardType === "full" || cardType === "description_only";
+            const showImage = cardType === "full" || cardType === "title_image" || cardType === "image_only";
+            const showCaption = showImage && Boolean(card.imageCaption);
+
+            if (state.selectedCardId === card.id) {
+                root.style.boxShadow = "0 0 0 3px rgba(34,211,238,0.55), 0 10px 24px rgba(15,23,42,0.2)";
+            }
+            if (state.connectFromId === card.id) {
+                root.style.boxShadow = "0 0 0 3px rgba(16,185,129,0.7), 0 10px 24px rgba(15,23,42,0.2)";
+            }
+
+            if (hasHeader) {
+                const header = document.createElement("div");
+                header.className = "select-none px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
+                header.style.background = card.color;
+                header.style.borderTopLeftRadius = "12px";
+                header.style.borderTopRightRadius = "12px";
+                header.style.touchAction = "none";
+                header.textContent = card.title || "Carte";
+                root.appendChild(header);
+            }
+
+            const body = document.createElement("div");
+            body.className = "space-y-2 p-3";
+
+            if (showDescription) {
+                const description = document.createElement("p");
+                description.className = "whitespace-pre-wrap break-words text-xs text-slate-700";
+                description.textContent = card.description || "Aucune description";
+                body.appendChild(description);
+            }
+
+            if (showImage && card.imageData) {
+                const img = document.createElement("img");
+                img.src = card.imageData;
+                img.alt = card.imageCaption || card.title || "image carte";
+                img.className = "max-h-28 w-full rounded-lg border border-slate-200 object-cover";
+                if (cardType === "image_only") {
+                    img.className = "max-h-40 w-full rounded-lg border border-slate-200 object-cover";
+                }
+                body.appendChild(img);
+
+                if (showCaption) {
+                    const cap = document.createElement("p");
+                    cap.className = "text-[11px] italic text-slate-500";
+                    cap.textContent = card.imageCaption;
+                    body.appendChild(cap);
+                }
+            } else if (showImage && !card.imageData) {
+                const emptyImg = document.createElement("div");
+                emptyImg.className = "rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-center text-[11px] text-slate-500";
+                emptyImg.textContent = "Ajoute une image pour ce type de carte.";
+                body.appendChild(emptyImg);
+            }
+
+            if (!showDescription && !showImage) {
+                const minimal = document.createElement("p");
+                minimal.className = "text-xs text-slate-500";
+                minimal.textContent = "Carte minimaliste.";
+                body.appendChild(minimal);
+            }
+
+            root.appendChild(body);
+
+            const resizeRight = document.createElement("div");
+            resizeRight.className = "absolute right-0 top-4 h-[calc(100%-16px)] w-2";
+            resizeRight.style.cursor = "ew-resize";
+
+            const resizeBottom = document.createElement("div");
+            resizeBottom.className = "absolute bottom-0 left-4 h-2 w-[calc(100%-16px)]";
+            resizeBottom.style.cursor = "ns-resize";
+
+            const resizeCorner = document.createElement("div");
+            resizeCorner.className = "absolute bottom-0 right-0 h-4 w-4 rounded-tl-md border-l border-t border-slate-300 bg-white/85";
+            resizeCorner.style.cursor = "nwse-resize";
+
+            root.appendChild(resizeRight);
+            root.appendChild(resizeBottom);
+            root.appendChild(resizeCorner);
+
+            let dragging = false;
+            let movedDuringDrag = false;
+            let dragOffsetX = 0;
+            let dragOffsetY = 0;
+            let pointerId = null;
+            let resizing = false;
+            let resizeMode = "";
+            let resizeStartX = 0;
+            let resizeStartY = 0;
+            let resizeStartW = 0;
+            let resizeStartH = 0;
+
+            function onPointerMove(event) {
+                if (!dragging || event.pointerId !== pointerId) {
+                    return;
+                }
+
+                const workspaceRect = workspace.getBoundingClientRect();
+                const maxX = WORKSPACE_WIDTH - card.width;
+                const maxY = WORKSPACE_HEIGHT - card.height;
+
+                movedDuringDrag = true;
+
+                card.x = clamp((event.clientX - workspaceRect.left) / state.zoom - dragOffsetX, 0, maxX);
+                card.y = clamp((event.clientY - workspaceRect.top) / state.zoom - dragOffsetY, 0, maxY);
+
+                root.style.left = `${card.x}px`;
+                root.style.top = `${card.y}px`;
+                renderEdges();
+            }
+
+            function stopDrag(event) {
+                if (!dragging || event.pointerId !== pointerId) {
+                    return;
+                }
+                dragging = false;
+                pointerId = null;
+                window.removeEventListener("pointermove", onPointerMove);
+                window.removeEventListener("pointerup", stopDrag);
+                window.removeEventListener("pointercancel", stopDrag);
+                saveState();
+                setTimeout(() => {
+                    movedDuringDrag = false;
+                }, 0);
+            }
+
+            function onResizeMove(event) {
+                if (!resizing || event.pointerId !== pointerId) {
+                    return;
+                }
+
+                const dx = (event.clientX - resizeStartX) / state.zoom;
+                const dy = (event.clientY - resizeStartY) / state.zoom;
+                const maxWidth = WORKSPACE_WIDTH - card.x;
+                const maxHeight = WORKSPACE_HEIGHT - card.y;
+
+                if (resizeMode === "x" || resizeMode === "xy") {
+                    card.width = clamp(resizeStartW + dx, 130, Math.min(420, maxWidth));
+                }
+                if (resizeMode === "y" || resizeMode === "xy") {
+                    card.height = clamp(resizeStartH + dy, 110, Math.min(360, maxHeight));
+                }
+
+                root.style.width = `${card.width}px`;
+                root.style.minHeight = `${card.height}px`;
+                renderEdges();
+            }
+
+            function stopResize(event) {
+                if (!resizing || event.pointerId !== pointerId) {
+                    return;
+                }
+                resizing = false;
+                pointerId = null;
+                window.removeEventListener("pointermove", onResizeMove);
+                window.removeEventListener("pointerup", stopResize);
+                window.removeEventListener("pointercancel", stopResize);
+                saveState();
+                renderEditor();
+            }
+
+            function startResize(event, mode) {
+                event.preventDefault();
+                event.stopPropagation();
+                resizing = true;
+                resizeMode = mode;
+                pointerId = event.pointerId;
+                resizeStartX = event.clientX;
+                resizeStartY = event.clientY;
+                resizeStartW = card.width;
+                resizeStartH = card.height;
+
+                state.selectedCardId = card.id;
+                renderEditor();
+
+                window.addEventListener("pointermove", onResizeMove);
+                window.addEventListener("pointerup", stopResize);
+                window.addEventListener("pointercancel", stopResize);
+            }
+
+            resizeRight.addEventListener("pointerdown", (event) => startResize(event, "x"));
+            resizeBottom.addEventListener("pointerdown", (event) => startResize(event, "y"));
+            resizeCorner.addEventListener("pointerdown", (event) => startResize(event, "xy"));
+
+            root.addEventListener("pointerdown", (event) => {
+                if (state.connectMode) {
+                    return;
+                }
+                if (event.target.closest("button, input, textarea, select, a, label")) {
+                    return;
+                }
+                dragging = true;
+                movedDuringDrag = false;
+                pointerId = event.pointerId;
+                const rect = root.getBoundingClientRect();
+                dragOffsetX = (event.clientX - rect.left) / state.zoom;
+                dragOffsetY = (event.clientY - rect.top) / state.zoom;
+
+                state.selectedCardId = card.id;
+                renderEditor();
+                renderEdges();
+
+                window.addEventListener("pointermove", onPointerMove);
+                window.addEventListener("pointerup", stopDrag);
+                window.addEventListener("pointercancel", stopDrag);
+                event.preventDefault();
+            });
+
+            root.addEventListener("click", () => {
+                if (movedDuringDrag) {
+                    return;
+                }
+                onCardClick(card.id);
+            });
+
+            return root;
+        }
+
+        function renderEdges() {
+            const defs = edgesLayer.querySelector("defs");
+            if (!defs) {
+                return;
+            }
+            while (edgesLayer.lastChild && edgesLayer.lastChild !== defs) {
+                edgesLayer.removeChild(edgesLayer.lastChild);
+            }
+            defs.innerHTML = "";
+
+            state.edges = state.edges.filter((edge) => getCardById(edge.from) && getCardById(edge.to));
+
+            state.edges.forEach((edge) => {
+                const fromCard = getCardById(edge.from);
+                const toCard = getCardById(edge.to);
+                if (!fromCard || !toCard) {
+                    return;
+                }
+
+                const x1 = fromCard.x + fromCard.width / 2;
+                const y1 = fromCard.y + fromCard.height / 2;
+                const x2 = toCard.x + toCard.width / 2;
+                const y2 = toCard.y + toCard.height / 2;
+
+                const c = (x1 + x2) / 2;
+                const d = `M ${x1} ${y1} C ${c} ${y1}, ${c} ${y2}, ${x2} ${y2}`;
+
+                const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+                const markerId = `arrow_${edge.id}`;
+                marker.setAttribute("id", markerId);
+                marker.setAttribute("markerWidth", "14");
+                marker.setAttribute("markerHeight", "10");
+                marker.setAttribute("refX", "11");
+                marker.setAttribute("refY", "5");
+                marker.setAttribute("orient", "auto");
+                const markerPolygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                markerPolygon.setAttribute("points", "0,0 14,5 0,10");
+                markerPolygon.setAttribute("fill", edge.color || "#0f172a");
+                marker.appendChild(markerPolygon);
+                defs.appendChild(marker);
+
+                const outlinePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                outlinePath.setAttribute("d", d);
+                outlinePath.setAttribute("stroke", "#cbd5e1");
+                outlinePath.setAttribute("stroke-width", String((edge.width || 6) + 6));
+                outlinePath.setAttribute("fill", "none");
+                outlinePath.setAttribute("stroke-linecap", "round");
+                outlinePath.setAttribute("stroke-linejoin", "round");
+                outlinePath.setAttribute("opacity", "1");
+                edgesLayer.appendChild(outlinePath);
+
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", d);
+                path.setAttribute("stroke", edge.color || "#0f172a");
+                path.setAttribute("stroke-width", String((edge.width || 6) + 1));
+                path.setAttribute("fill", "none");
+                path.setAttribute("stroke-linecap", "round");
+                path.setAttribute("stroke-linejoin", "round");
+                path.setAttribute("opacity", "1");
+                path.setAttribute("marker-end", `url(#${markerId})`);
+                path.style.cursor = "pointer";
+                path.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    selectEdge(edge.id);
+                });
+                edgesLayer.appendChild(path);
+
+                if (state.selectedEdgeId === edge.id) {
+                    const activePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    activePath.setAttribute("d", d);
+                    activePath.setAttribute("stroke", "#22d3ee");
+                    activePath.setAttribute("stroke-width", String((edge.width || 6) + 6));
+                    activePath.setAttribute("fill", "none");
+                    activePath.setAttribute("opacity", "0.45");
+                    activePath.setAttribute("stroke-linecap", "round");
+                    activePath.setAttribute("stroke-linejoin", "round");
+                    edgesLayer.appendChild(activePath);
+                }
+
+                if ((edge.label || "").trim()) {
+                    const t = 0.5;
+                    const lx = (1 - t) ** 3 * x1 + 3 * (1 - t) ** 2 * t * c + 3 * (1 - t) * t ** 2 * c + t ** 3 * x2;
+                    const ly = (1 - t) ** 3 * y1 + 3 * (1 - t) ** 2 * t * y1 + 3 * (1 - t) * t ** 2 * y2 + t ** 3 * y2;
+
+                    const labelBg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    const labelWidth = Math.min(220, Math.max(48, edge.label.length * 7.2));
+                    labelBg.setAttribute("x", String(lx - labelWidth / 2));
+                    labelBg.setAttribute("y", String(ly - 13));
+                    labelBg.setAttribute("rx", "8");
+                    labelBg.setAttribute("ry", "8");
+                    labelBg.setAttribute("width", String(labelWidth));
+                    labelBg.setAttribute("height", "22");
+                    labelBg.setAttribute("fill", "#ffffff");
+                    labelBg.setAttribute("stroke", edge.color || "#0f172a");
+                    labelBg.setAttribute("stroke-width", "1.2");
+                    edgesLayer.appendChild(labelBg);
+
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute("x", String(lx));
+                    text.setAttribute("y", String(ly + 2));
+                    text.setAttribute("text-anchor", "middle");
+                    text.setAttribute("dominant-baseline", "middle");
+                    text.setAttribute("font-size", "11");
+                    text.setAttribute("font-weight", "700");
+                    text.setAttribute("fill", edge.color || "#0f172a");
+                    text.textContent = edge.label;
+                    edgesLayer.appendChild(text);
+                }
+            });
+        }
+
+        function renderEditor() {
+            const card = getCardById(state.selectedCardId);
+            const edge = state.edges.find((item) => item.id === state.selectedEdgeId);
+
+            if (edge) {
+                emptySelection.classList.add("hidden");
+                cardEditor.classList.add("hidden");
+                edgeEditor.classList.remove("hidden");
+                edgeLabelInput.value = edge.label || "";
+                edgeColorInput.value = edge.color || "#0f172a";
+                edgeWidthInput.value = String(edge.width || 6);
+                cardImageInput.value = "";
+                return;
+            }
+
+            edgeEditor.classList.add("hidden");
+            if (!card) {
+                emptySelection.classList.remove("hidden");
+                cardEditor.classList.add("hidden");
+                cardImageInput.value = "";
+                return;
+            }
+
+            emptySelection.classList.add("hidden");
+            cardEditor.classList.remove("hidden");
+            cardTypeInput.value = normalizeCardType(card.type);
+            cardTitleInput.value = card.title;
+            cardDescriptionInput.value = card.description;
+            cardColorInput.value = card.color;
+            cardImageCaptionInput.value = card.imageCaption || "";
+        }
+
+        function render() {
+            cardsLayer.innerHTML = "";
+            state.cards.forEach((card) => cardsLayer.appendChild(createCardElement(card)));
+            renderEditor();
+            renderEdges();
+            applyDecor();
+        }
+
+        function enableConnectMode(enabled) {
+            state.connectMode = enabled;
+            state.connectFromId = null;
+            connectModeBtn.className = enabled
+                ? "rounded-xl border border-cyan-500 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-800"
+                : "rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600";
+            setStatus(enabled ? "Mode lien actif: source puis cible." : "Mode lien desactive.");
+        }
+
+        cardTypeInput.addEventListener("change", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.type = normalizeCardType(cardTypeInput.value);
+            saveState();
+            render();
+        });
+
+        cardTitleInput.addEventListener("input", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.title = cardTitleInput.value;
+            saveState();
+            render();
+        });
+
+        cardDescriptionInput.addEventListener("input", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.description = cardDescriptionInput.value;
+            saveState();
+            render();
+        });
+
+        cardColorInput.addEventListener("input", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.color = cardColorInput.value;
+            saveState();
+            render();
+        });
+
+        cardImageCaptionInput.addEventListener("input", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.imageCaption = cardImageCaptionInput.value;
+            saveState();
+            render();
+        });
+
+        cardImageInput.addEventListener("change", (event) => {
+            const file = event.target.files && event.target.files[0];
+            const card = getCardById(state.selectedCardId);
+            if (!card || !file) {
+                return;
+            }
+            if (!file.type.startsWith("image/")) {
+                setStatus("Le fichier choisi n'est pas une image.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                card.imageData = typeof reader.result === "string" ? reader.result : "";
+                saveState();
+                render();
+                setStatus("Image ajoutee a la carte.");
+            };
+            reader.readAsDataURL(file);
+        });
+
+        removeImageBtn.addEventListener("click", () => {
+            const card = getCardById(state.selectedCardId);
+            if (!card) {
+                return;
+            }
+            card.imageData = "";
+            card.imageCaption = "";
+            cardImageInput.value = "";
+            saveState();
+            render();
+            setStatus("Image retiree.");
+        });
+
+        edgeLabelInput.addEventListener("input", () => {
+            const edge = state.edges.find((item) => item.id === state.selectedEdgeId);
+            if (!edge) {
+                return;
+            }
+            edge.label = edgeLabelInput.value;
+            saveState();
+            renderEdges();
+        });
+
+        edgeColorInput.addEventListener("input", () => {
+            const edge = state.edges.find((item) => item.id === state.selectedEdgeId);
+            if (!edge) {
+                return;
+            }
+            edge.color = edgeColorInput.value;
+            saveState();
+            renderEdges();
+        });
+
+        edgeWidthInput.addEventListener("input", () => {
+            const edge = state.edges.find((item) => item.id === state.selectedEdgeId);
+            if (!edge) {
+                return;
+            }
+            edge.width = clamp(Number(edgeWidthInput.value) || 6, 4, 16);
+            saveState();
+            renderEdges();
+        });
+
+        deleteEdgeBtn.addEventListener("click", () => {
+            deleteSelectedEdge();
+            setStatus("Lien supprime.");
+        });
+
+        addCardBtn.addEventListener("click", () => {
+            enableConnectMode(false);
+            createCard(120 + state.cards.length * 18, 120 + state.cards.length * 16, "Nouvelle carte");
+            setStatus("Carte ajoutee.");
+        });
+
+        connectModeBtn.addEventListener("click", () => enableConnectMode(!state.connectMode));
+        deleteCardBtn.addEventListener("click", deleteSelectedCard);
+        duplicateCardBtn.addEventListener("click", () => {
+            enableConnectMode(false);
+            duplicateSelectedCard();
+        });
+
+        toggleGridBtn.addEventListener("click", () => {
+            state.showGrid = !state.showGrid;
+            saveState();
+            applyDecor();
+            setStatus(state.showGrid ? "Grille affichee." : "Grille masquee.");
+        });
+
+        resetMapBtn.addEventListener("click", () => {
+            enableConnectMode(false);
+            state.cards = [];
+            state.edges = [];
+            state.selectedCardId = null;
+            state.connectFromId = null;
+            createCard(120, 120, "Theme principal", {
+                color: "#ef4444",
+                width: 220,
+                height: 190,
+            });
+            createCard(460, 290, "Sous-theme", {
+                color: "#22c55e",
+                width: 180,
+                height: 170,
+            });
+            ensureEdge(state.cards[0].id, state.cards[1].id);
+            saveState();
+            render();
+            setStatus("Carte reinitialisee.");
+        });
+
+        exportMapBtn.addEventListener("click", () => {
+            const payload = {
+                cards: state.cards,
+                edges: state.edges,
+                showGrid: state.showGrid,
+                zoom: state.zoom,
+                exported_at: new Date().toISOString(),
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `mindmap_${Date.now()}.json`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            setStatus("Export JSON termine.");
+        });
+
+        zoomOutBtn.addEventListener("click", () => {
+            state.zoom = clamp(state.zoom - 0.1, 0.45, 2.1);
+            saveState();
+            applyDecor();
+            renderEdges();
+        });
+
+        zoomInBtn.addEventListener("click", () => {
+            state.zoom = clamp(state.zoom + 0.1, 0.45, 2.1);
+            saveState();
+            applyDecor();
+            renderEdges();
+        });
+
+        zoomResetBtn.addEventListener("click", () => {
+            state.zoom = 1;
+            saveState();
+            applyDecor();
+            renderEdges();
+            canvas.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+        });
+
+        canvas.addEventListener("wheel", (event) => {
+            if (!event.ctrlKey) {
+                return;
+            }
+            event.preventDefault();
+            const delta = event.deltaY > 0 ? -0.08 : 0.08;
+            state.zoom = clamp(state.zoom + delta, 0.45, 2.1);
+            saveState();
+            applyDecor();
+            renderEdges();
+        }, { passive: false });
+
+        let panning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let panLeft = 0;
+        let panTop = 0;
+
+        canvas.addEventListener("pointerdown", (event) => {
+            const target = event.target;
+            const isBackgroundSurface = target === canvas
+                || target === workspace
+                || target.id === "grid-layer"
+                || target.id === "cards-layer"
+                || target.id === "edges-layer";
+
+            if (event.button !== 0 || !isBackgroundSurface || target.closest("[data-id]")) {
+                return;
+            }
+            panning = true;
+            panStartX = event.clientX;
+            panStartY = event.clientY;
+            panLeft = canvas.scrollLeft;
+            panTop = canvas.scrollTop;
+            canvas.style.cursor = "grabbing";
+            canvas.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+
+        canvas.addEventListener("pointermove", (event) => {
+            if (!panning) {
+                return;
+            }
+            canvas.scrollLeft = panLeft - (event.clientX - panStartX);
+            canvas.scrollTop = panTop - (event.clientY - panStartY);
+        });
+
+        canvas.addEventListener("pointerup", (event) => {
+            if (!panning) {
+                return;
+            }
+            panning = false;
+            canvas.style.cursor = "";
+            canvas.releasePointerCapture(event.pointerId);
+        });
+
+        canvas.addEventListener("pointercancel", () => {
+            panning = false;
+            canvas.style.cursor = "";
+        });
+
+        canvas.addEventListener("click", (event) => {
+            if (event.target.closest("[data-id]")) {
+                return;
+            }
+            if (state.selectedEdgeId || state.selectedCardId) {
+                state.selectedEdgeId = null;
+                state.selectedCardId = null;
+                renderEditor();
+                renderEdges();
+            }
+        });
+
+        window.addEventListener("resize", renderEdges);
+
+        const publishedPayloadTag = document.getElementById("published-mindmap-payload");
+        const publishedMetaTag = document.getElementById("published-mindmap-meta");
+        let publishedPayload = {};
+        let publishedMeta = {};
+        try {
+            publishedPayload = JSON.parse(publishedPayloadTag.textContent || "{}");
+        } catch (error) {
+            publishedPayload = {};
+        }
+        try {
+            publishedMeta = JSON.parse(publishedMetaTag.textContent || "{}");
+        } catch (error) {
+            publishedMeta = {};
+        }
+
+        loadState();
+        if (Array.isArray(publishedPayload.cards) && publishedPayload.cards.length) {
+            state.cards = publishedPayload.cards.map(hydrateCard);
+            state.edges = Array.isArray(publishedPayload.edges)
+                ? publishedPayload.edges.filter((edge) => edge.from && edge.to).map((edge) => ({
+                    id: edge.id || uid("edge"),
+                    from: edge.from,
+                    to: edge.to,
+                    color: edge.color || "#0f172a",
+                    width: clamp(Number(edge.width) || 6, 4, 16),
+                    label: edge.label || "",
+                }))
+                : [];
+            state.showGrid = publishedPayload.showGrid !== false;
+            state.zoom = clamp(Number(publishedPayload.zoom) || 1, 0.45, 2.1);
+            state.selectedCardId = null;
+            state.selectedEdgeId = null;
+            state.connectFromId = null;
+            saveState();
+            const title = (publishedMeta && publishedMeta.title) ? `: ${publishedMeta.title}` : "";
+            setStatus(`Publication chargee${title}`);
+        }
+        render();
+        enableConnectMode(false);
+    })();
+</script>
+{% endblock %}
