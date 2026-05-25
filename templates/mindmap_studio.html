@@ -7,6 +7,7 @@
             <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">MindMap Studio</h1>
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Vrai espace carte mentale: cartes colorees, edition complete, image optionnelle + description.</p>
         </div>
+        <button id="go-pdf-studio" type="button" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-500">Vers PDF Studio</button>
     </div>
 
     <div class="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -156,6 +157,7 @@
         const resetMapBtn = document.getElementById("reset-map");
         const toggleGridBtn = document.getElementById("toggle-grid");
         const exportMapBtn = document.getElementById("export-map");
+        const goPdfStudioBtn = document.getElementById("go-pdf-studio");
 
         const zoomOutBtn = document.getElementById("zoom-out");
         const zoomInBtn = document.getElementById("zoom-in");
@@ -494,7 +496,9 @@
             const hasHeader = cardType !== "image_only" && cardType !== "description_only";
             const showDescription = cardType === "full" || cardType === "description_only";
             const showImage = cardType === "full" || cardType === "title_image" || cardType === "image_only";
-            const showCaption = showImage && Boolean(card.imageCaption);
+            const showCaption = showImage && cardType !== "image_only" && Boolean(card.imageCaption);
+            const headerHeightPx = hasHeader ? 34 : 0;
+            const imageFillHeight = Math.max(90, card.height - headerHeightPx - 16);
 
             if (state.selectedCardId === card.id) {
                 root.style.boxShadow = "0 0 0 3px rgba(34,211,238,0.55), 0 10px 24px rgba(15,23,42,0.2)";
@@ -516,6 +520,12 @@
 
             const body = document.createElement("div");
             body.className = "space-y-2 p-3";
+            if (cardType === "image_only") {
+                body.className = "h-full p-1";
+                root.style.overflow = "hidden";
+            } else if (cardType === "title_image") {
+                body.className = "h-full p-2";
+            }
 
             if (showDescription) {
                 const description = document.createElement("p");
@@ -528,9 +538,13 @@
                 const img = document.createElement("img");
                 img.src = card.imageData;
                 img.alt = card.imageCaption || card.title || "image carte";
-                img.className = "max-h-28 w-full rounded-lg border border-slate-200 object-cover";
+                img.className = "w-full rounded-lg border border-slate-200 object-cover";
+                img.style.height = `${Math.max(84, Math.round(card.height * 0.42))}px`;
                 if (cardType === "image_only") {
-                    img.className = "max-h-40 w-full rounded-lg border border-slate-200 object-cover";
+                    img.className = "h-full w-full rounded-[12px] object-cover";
+                    img.style.height = `${imageFillHeight}px`;
+                } else if (cardType === "title_image") {
+                    img.style.height = `${imageFillHeight}px`;
                 }
                 body.appendChild(img);
 
@@ -1141,6 +1155,33 @@
                 renderEditor();
                 renderEdges();
             }
+        });
+
+        goPdfStudioBtn.addEventListener("click", async () => {
+            goPdfStudioBtn.disabled = true;
+            const oldText = goPdfStudioBtn.textContent;
+            goPdfStudioBtn.textContent = "Preparation PDF...";
+
+            const firstCard = state.cards[0] || null;
+            let mindmapImageData = "";
+            try {
+                mindmapImageData = await captureMindmapImageData();
+            } catch (error) {
+                console.error(error);
+            }
+
+            const payload = {
+                title: firstCard?.title || "Carte mentale",
+                subtitle: "Import depuis MindMap Studio",
+                body: buildMindmapPdfText() || "Carte mentale vide.",
+                mindmap_image_data: mindmapImageData,
+                created_at: new Date().toISOString(),
+            };
+            localStorage.setItem("mindmap_to_pdf_payload", JSON.stringify(payload));
+            window.location.href = "{{ url_for('create_stylish_pdf') }}?from_mindmap=1";
+
+            goPdfStudioBtn.textContent = oldText;
+            goPdfStudioBtn.disabled = false;
         });
 
         window.addEventListener("resize", renderEdges);

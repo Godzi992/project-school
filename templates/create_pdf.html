@@ -89,11 +89,23 @@
                     <label class="text-xs font-semibold md:col-span-2">Titres sections
                         <input id="heading_font_size" type="range" min="11" max="22" value="{{ default_studio_settings.heading_font_size }}" class="mt-1 w-full">
                     </label>
+                    <label class="text-xs font-semibold">Largeur image (%)
+                        <input id="image_width_pct" type="range" min="18" max="40" value="{{ default_studio_settings.image_width_pct }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold">Hauteur image (%)
+                        <input id="image_height_pct" type="range" min="18" max="46" value="{{ default_studio_settings.image_height_pct }}" class="mt-1 w-full">
+                    </label>
+                    <label class="text-xs font-semibold md:col-span-2">Position verticale image (%)
+                        <input id="image_top_pct" type="range" min="18" max="64" value="{{ default_studio_settings.image_top_pct }}" class="mt-1 w-full">
+                    </label>
                 </div>
                 <button id="reset_layout" type="button" class="mt-3 rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold dark:border-slate-600">Reset placement</button>
             </div>
 
-            <button type="submit" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Generer et telecharger le PDF</button>
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="submit" name="post_action" value="publish" class="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-base font-bold text-white hover:bg-cyan-700">Publier sur l'accueil</button>
+                <button type="submit" name="post_action" value="download" class="w-full rounded-2xl border border-cyan-500 bg-cyan-50 px-4 py-3 text-base font-bold text-cyan-900 hover:bg-cyan-100">Publier + telecharger</button>
+            </div>
         </div>
 
         <div class="xl:col-span-7">
@@ -128,6 +140,7 @@
                     <div id="preview-map-image-wrap" class="absolute right-[7%] top-[30%] hidden w-[28%] rounded-lg border border-slate-300 bg-white/95 p-1 shadow">
                         <img id="preview-map-image" alt="Apercu carte mentale" class="max-h-[190px] w-full rounded object-cover">
                         <div class="mt-1 text-center text-[10px] font-semibold text-slate-600">Image importee depuis MindMap</div>
+                        <div id="image-resize-handle" class="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize rounded-tl-md border-l border-t border-slate-300 bg-white/90"></div>
                     </div>
 
                     <div class="absolute bottom-0 left-0 w-full border-t border-slate-300 px-8 py-2 text-[10px] text-slate-500">EcoShare - PDF Studio</div>
@@ -168,12 +181,22 @@
         const previewMeta = document.getElementById("preview-meta");
         const previewMapImageWrap = document.getElementById("preview-map-image-wrap");
         const previewMapImage = document.getElementById("preview-map-image");
+        const imageResizeHandle = document.getElementById("image-resize-handle");
 
         const dragTitle = document.getElementById("drag-title");
         const dragSubtitle = document.getElementById("drag-subtitle");
         const dragContent = document.getElementById("drag-content");
 
-        const rangeIds = ["header_height", "title_font_size", "subtitle_font_size", "body_font_size", "heading_font_size"];
+        const rangeIds = [
+            "header_height",
+            "title_font_size",
+            "subtitle_font_size",
+            "body_font_size",
+            "heading_font_size",
+            "image_width_pct",
+            "image_height_pct",
+            "image_top_pct",
+        ];
         const ranges = {};
         rangeIds.forEach((id) => {
             const el = document.getElementById(id);
@@ -289,7 +312,100 @@
             const metaTop = state.header_height + 14;
             previewMeta.style.top = `${metaTop}px`;
 
+            previewMapImageWrap.style.width = `${state.image_width_pct}%`;
+            previewMapImageWrap.style.top = `${state.image_top_pct}%`;
+            previewMapImage.style.maxHeight = `${Math.round((state.image_height_pct / 100) * 842)}px`;
+
             syncLayoutJson();
+        }
+
+        function bindImageDirectEdit() {
+            let draggingImage = false;
+            let resizingImage = false;
+            let startX = 0;
+            let startY = 0;
+            let startTop = 0;
+            let startWidth = 0;
+            let startHeight = 0;
+            let activePointerId = null;
+
+            previewMapImageWrap.addEventListener("pointerdown", (event) => {
+                if (previewMapImageWrap.classList.contains("hidden")) {
+                    return;
+                }
+                if (event.target === imageResizeHandle) {
+                    return;
+                }
+                draggingImage = true;
+                activePointerId = event.pointerId;
+                startY = event.clientY;
+                startTop = Number(state.image_top_pct) || 30;
+                previewMapImageWrap.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+
+            imageResizeHandle.addEventListener("pointerdown", (event) => {
+                if (previewMapImageWrap.classList.contains("hidden")) {
+                    return;
+                }
+                resizingImage = true;
+                activePointerId = event.pointerId;
+                startX = event.clientX;
+                startY = event.clientY;
+                startWidth = Number(state.image_width_pct) || 28;
+                startHeight = Number(state.image_height_pct) || 27;
+                previewMapImageWrap.setPointerCapture(event.pointerId);
+                event.preventDefault();
+                event.stopPropagation();
+            });
+
+            previewMapImageWrap.addEventListener("pointermove", (event) => {
+                if (event.pointerId !== activePointerId) {
+                    return;
+                }
+
+                if (draggingImage) {
+                    const rect = page.getBoundingClientRect();
+                    const dyPct = ((event.clientY - startY) / rect.height) * 100;
+                    state.image_top_pct = Math.max(18, Math.min(64, startTop + dyPct));
+                    if (ranges.image_top_pct) {
+                        ranges.image_top_pct.value = String(Math.round(state.image_top_pct));
+                    }
+                    applyPreview();
+                }
+
+                if (resizingImage) {
+                    const rect = page.getBoundingClientRect();
+                    const dxPct = ((event.clientX - startX) / rect.width) * 100;
+                    const dyPct = ((event.clientY - startY) / rect.height) * 100;
+
+                    state.image_width_pct = Math.max(18, Math.min(40, startWidth + dxPct));
+                    state.image_height_pct = Math.max(18, Math.min(46, startHeight + dyPct));
+
+                    if (ranges.image_width_pct) {
+                        ranges.image_width_pct.value = String(Math.round(state.image_width_pct));
+                    }
+                    if (ranges.image_height_pct) {
+                        ranges.image_height_pct.value = String(Math.round(state.image_height_pct));
+                    }
+                    applyPreview();
+                }
+            });
+
+            previewMapImageWrap.addEventListener("pointerup", (event) => {
+                if (event.pointerId !== activePointerId) {
+                    return;
+                }
+                draggingImage = false;
+                resizingImage = false;
+                activePointerId = null;
+            });
+
+            previewMapImageWrap.addEventListener("pointercancel", () => {
+                draggingImage = false;
+                resizingImage = false;
+                activePointerId = null;
+            });
         }
 
         function bindDrag(blockEl, leftKey, topKey) {
@@ -331,6 +447,7 @@
         bindDrag(dragTitle, "title_left_pct", "title_top_pct");
         bindDrag(dragSubtitle, "subtitle_left_pct", "subtitle_top_pct");
         bindDrag(dragContent, "content_left_pct", "content_top_pct");
+        bindImageDirectEdit();
 
         [titleInput, subtitleInput, bodyInput, themeInput].forEach((el) => {
             el.addEventListener("input", applyPreview);

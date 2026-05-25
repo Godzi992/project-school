@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-lg dark:border-slate-700 dark:bg-slate-900 md:p-6">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+            <h1 class="text-3xl font-black text-slate-900 dark:text-slate-100">Agent IA Studio</h1>
+            <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Interface prete a connecter a ton API: prompt systeme, model, endpoint et conversation.</p>
+        </div>
+        <button id="save-config" type="button" class="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-500">Sauvegarder config</button>
+    </div>
+
+    <div class="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <aside class="space-y-3 xl:col-span-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/70">
+                <p class="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Connexion API</p>
+                <div class="mt-3 space-y-3">
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Endpoint API</label>
+                        <input id="api-endpoint" type="text" placeholder="https://api.ton-agent.com/v1/chat/completions" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Cle API</label>
+                        <input id="api-key" type="password" placeholder="sk-..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-xs font-semibold">Modele</label>
+                        <input id="api-model" type="text" placeholder="gpt-4.1-mini" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    </div>
+                </div>
+            </div>
+
+            <div class="rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-300">Prompt systeme par defaut</p>
+                    <button id="reset-prompt" type="button" class="rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold dark:border-slate-600">Reset</button>
+                </div>
+                <textarea id="system-prompt" rows="12" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs leading-relaxed dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">{{ default_ai_agent_prompt }}</textarea>
+            </div>
+        </aside>
+
+        <div class="xl:col-span-8">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                <div class="mb-3 flex items-center justify-between">
+                    <p class="text-sm font-bold">Conversation</p>
+                    <div class="flex items-center gap-2">
+                        <button id="clear-chat" type="button" class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-600">Effacer</button>
+                        <button id="send-chat" type="button" class="rounded-lg bg-cyan-600 px-3 py-1 text-xs font-bold text-white">Envoyer</button>
+                    </div>
+                </div>
+
+                <div id="chat-log" class="h-[52vh] min-h-[380px] overflow-auto rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-900">
+                    <div class="mb-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900 dark:border-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-100">
+                        API non connectee pour le moment. Interface prete: colle ton endpoint et ta cle, puis on branchera l'appel serveur dans l'etape suivante.
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <label class="mb-1 block text-xs font-semibold">Message</label>
+                    <textarea id="chat-input" rows="4" placeholder="Ecris ta consigne ici..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"></textarea>
+                </div>
+                <p id="chat-status" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Astuce: Shift+Entrer pour retour a la ligne, Entrer pour envoyer.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+    (function () {
+        const STORAGE_KEY = "ai_agent_studio_v1";
+        const DEFAULT_PROMPT = {{ default_ai_agent_prompt|tojson }};
+
+        const apiEndpoint = document.getElementById("api-endpoint");
+        const apiKey = document.getElementById("api-key");
+        const apiModel = document.getElementById("api-model");
+        const systemPrompt = document.getElementById("system-prompt");
+        const saveConfigBtn = document.getElementById("save-config");
+        const resetPromptBtn = document.getElementById("reset-prompt");
+
+        const chatLog = document.getElementById("chat-log");
+        const chatInput = document.getElementById("chat-input");
+        const sendChatBtn = document.getElementById("send-chat");
+        const clearChatBtn = document.getElementById("clear-chat");
+        const chatStatus = document.getElementById("chat-status");
+
+        const state = {
+            endpoint: "",
+            apiKey: "",
+            model: "",
+            systemPrompt: DEFAULT_PROMPT,
+            messages: [],
+        };
+
+        function saveState() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function loadState() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) {
+                return;
+            }
+            try {
+                const parsed = JSON.parse(raw);
+                state.endpoint = parsed.endpoint || "";
+                state.apiKey = parsed.apiKey || "";
+                state.model = parsed.model || "";
+                state.systemPrompt = (parsed.systemPrompt || DEFAULT_PROMPT).trim() || DEFAULT_PROMPT;
+                state.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function appendBubble(role, text) {
+            const wrap = document.createElement("div");
+            wrap.className = role === "user"
+                ? "mb-2 ml-auto max-w-[88%] rounded-xl bg-cyan-600 px-3 py-2 text-sm text-white"
+                : "mb-2 mr-auto max-w-[88%] rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
+            wrap.textContent = text;
+            chatLog.appendChild(wrap);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        function renderMessages() {
+            chatLog.innerHTML = "";
+            if (!state.messages.length) {
+                const info = document.createElement("div");
+                info.className = "mb-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900 dark:border-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-100";
+                info.textContent = "API non connectee pour le moment. Interface prete: colle ton endpoint et ta cle, puis on branchera l'appel serveur dans l'etape suivante.";
+                chatLog.appendChild(info);
+                return;
+            }
+            state.messages.forEach((msg) => appendBubble(msg.role, msg.content));
+        }
+
+        function syncInputs() {
+            apiEndpoint.value = state.endpoint;
+            apiKey.value = state.apiKey;
+            apiModel.value = state.model;
+            systemPrompt.value = state.systemPrompt;
+        }
+
+        function sendMessage() {
+            const content = chatInput.value.trim();
+            if (!content) {
+                return;
+            }
+            state.messages.push({ role: "user", content });
+            appendBubble("user", content);
+            chatInput.value = "";
+
+            // Placeholder answer until API wiring is added.
+            const placeholder = "Message pris en compte. Branche ton API et on activera la vraie reponse IA.";
+            state.messages.push({ role: "assistant", content: placeholder });
+            appendBubble("assistant", placeholder);
+            saveState();
+            chatStatus.textContent = "Simulation locale active. API a brancher ensuite.";
+        }
+
+        saveConfigBtn.addEventListener("click", () => {
+            state.endpoint = apiEndpoint.value.trim();
+            state.apiKey = apiKey.value.trim();
+            state.model = apiModel.value.trim();
+            state.systemPrompt = systemPrompt.value.trim() || DEFAULT_PROMPT;
+            saveState();
+            chatStatus.textContent = "Configuration sauvegardee.";
+        });
+
+        resetPromptBtn.addEventListener("click", () => {
+            state.systemPrompt = DEFAULT_PROMPT;
+            systemPrompt.value = DEFAULT_PROMPT;
+            saveState();
+            chatStatus.textContent = "Prompt par defaut restaure.";
+        });
+
+        sendChatBtn.addEventListener("click", sendMessage);
+        clearChatBtn.addEventListener("click", () => {
+            state.messages = [];
+            saveState();
+            renderMessages();
+            chatStatus.textContent = "Conversation effacee.";
+        });
+
+        chatInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+
+        [apiEndpoint, apiKey, apiModel, systemPrompt].forEach((el) => {
+            el.addEventListener("change", () => {
+                state.endpoint = apiEndpoint.value.trim();
+                state.apiKey = apiKey.value.trim();
+                state.model = apiModel.value.trim();
+                state.systemPrompt = systemPrompt.value.trim() || DEFAULT_PROMPT;
+                saveState();
+            });
+        });
+
+        loadState();
+        syncInputs();
+        renderMessages();
+    })();
+</script>
+{% endblock %}

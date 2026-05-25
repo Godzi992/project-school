@@ -102,6 +102,9 @@
                     </button>
                 </form>
                 {% if current_user.is_authenticated %}
+                    <button id="open-ai-helper" type="button" class="rounded-full border border-cyan-400 bg-cyan-50 px-4 py-2 font-semibold text-cyan-800 dark:border-cyan-500 dark:bg-cyan-900/30 dark:text-cyan-100">Help with AI</button>
+                {% endif %}
+                {% if current_user.is_authenticated %}
                     {% if current_user.role == 'admin' %}
                         <a href="{{ url_for('admin_dashboard') }}" class="rounded-full border border-amber-500 px-4 py-2 font-semibold text-amber-700 dark:text-amber-300">
                             Admin {% if new_reports_count > 0 %}({{ new_reports_count }}){% endif %}
@@ -157,5 +160,169 @@
             </div>
         {% endif %}
     </main>
+
+    {% if current_user.is_authenticated %}
+        <div id="ai-helper-overlay" class="fixed inset-0 z-40 hidden bg-slate-900/45"></div>
+        <aside id="ai-helper-drawer" class="fixed right-0 top-0 z-50 hidden h-full w-full max-w-md border-l border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <div>
+                    <h2 class="text-base font-black text-slate-900 dark:text-slate-100">Help with AI</h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Assistant rapide sans quitter la page</p>
+                </div>
+                <button id="close-ai-helper" type="button" class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold dark:border-slate-600">Fermer</button>
+            </div>
+
+            <div class="border-b border-slate-200 p-2 dark:border-slate-700">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="ai-tab-chat" type="button" class="rounded-xl bg-cyan-600 px-3 py-2 text-xs font-bold text-white">Question rapide</button>
+                    <button id="ai-tab-pdf" type="button" class="rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600">Resumer un PDF</button>
+                </div>
+            </div>
+
+            <div id="ai-panel-chat" class="h-[calc(100%-126px)] p-3">
+                <div id="ai-chat-log" class="h-[62%] overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-800"></div>
+                <div class="mt-3 space-y-2">
+                    <textarea id="ai-chat-input" rows="4" placeholder="Pose ta question..." class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"></textarea>
+                    <button id="ai-chat-send" type="button" class="w-full rounded-xl bg-cyan-600 px-3 py-2 text-sm font-bold text-white">Envoyer</button>
+                </div>
+            </div>
+
+            <div id="ai-panel-pdf" class="hidden h-[calc(100%-126px)] p-3">
+                <div class="rounded-xl border border-slate-300 bg-slate-50 p-3 dark:border-slate-600 dark:bg-slate-800">
+                    <label class="mb-2 block text-xs font-semibold">Choisir un PDF</label>
+                    <input id="ai-pdf-file" type="file" accept="application/pdf" class="w-full rounded-lg border border-slate-300 p-2 text-xs dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                    <button id="ai-pdf-summarize" type="button" class="mt-3 w-full rounded-xl bg-cyan-600 px-3 py-2 text-sm font-bold text-white">Generer le resume</button>
+                </div>
+                <div id="ai-pdf-result" class="mt-3 h-[58%] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm dark:border-slate-600 dark:bg-slate-800"></div>
+            </div>
+        </aside>
+
+        <script>
+            (function () {
+                const openBtn = document.getElementById("open-ai-helper");
+                const closeBtn = document.getElementById("close-ai-helper");
+                const overlay = document.getElementById("ai-helper-overlay");
+                const drawer = document.getElementById("ai-helper-drawer");
+
+                const tabChat = document.getElementById("ai-tab-chat");
+                const tabPdf = document.getElementById("ai-tab-pdf");
+                const panelChat = document.getElementById("ai-panel-chat");
+                const panelPdf = document.getElementById("ai-panel-pdf");
+
+                const chatLog = document.getElementById("ai-chat-log");
+                const chatInput = document.getElementById("ai-chat-input");
+                const chatSend = document.getElementById("ai-chat-send");
+
+                const pdfFile = document.getElementById("ai-pdf-file");
+                const pdfBtn = document.getElementById("ai-pdf-summarize");
+                const pdfResult = document.getElementById("ai-pdf-result");
+
+                function openDrawer() {
+                    overlay.classList.remove("hidden");
+                    drawer.classList.remove("hidden");
+                }
+
+                function closeDrawer() {
+                    overlay.classList.add("hidden");
+                    drawer.classList.add("hidden");
+                }
+
+                function setTab(tab) {
+                    const chatActive = tab === "chat";
+                    panelChat.classList.toggle("hidden", !chatActive);
+                    panelPdf.classList.toggle("hidden", chatActive);
+
+                    tabChat.className = chatActive
+                        ? "rounded-xl bg-cyan-600 px-3 py-2 text-xs font-bold text-white"
+                        : "rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600";
+                    tabPdf.className = !chatActive
+                        ? "rounded-xl bg-cyan-600 px-3 py-2 text-xs font-bold text-white"
+                        : "rounded-xl border border-slate-300 px-3 py-2 text-xs font-bold dark:border-slate-600";
+                }
+
+                function addMessage(role, text) {
+                    const bubble = document.createElement("div");
+                    bubble.className = role === "user"
+                        ? "mb-2 ml-auto max-w-[90%] rounded-xl bg-cyan-600 px-3 py-2 text-sm text-white"
+                        : "mb-2 mr-auto max-w-[90%] rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900";
+                    bubble.textContent = text;
+                    chatLog.appendChild(bubble);
+                    chatLog.scrollTop = chatLog.scrollHeight;
+                }
+
+                async function sendChat() {
+                    const message = chatInput.value.trim();
+                    if (!message) {
+                        return;
+                    }
+                    chatInput.value = "";
+                    addMessage("user", message);
+
+                    try {
+                        const response = await fetch("{{ url_for('ai_helper_chat') }}", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ message }),
+                        });
+                        const data = await response.json();
+                        if (!response.ok || !data.ok) {
+                            throw new Error(data.error || "Erreur AI.");
+                        }
+                        addMessage("assistant", data.answer || "Aucune reponse.");
+                    } catch (error) {
+                        addMessage("assistant", `Erreur: ${error.message || "indisponible"}`);
+                    }
+                }
+
+                async function summarizePdf() {
+                    const file = pdfFile.files && pdfFile.files[0];
+                    if (!file) {
+                        pdfResult.textContent = "Ajoute un PDF avant de lancer le resume.";
+                        return;
+                    }
+
+                    pdfResult.textContent = "Analyse du PDF en cours...";
+                    const formData = new FormData();
+                    formData.append("pdf_file", file);
+
+                    try {
+                        const response = await fetch("{{ url_for('ai_helper_summarize_pdf') }}", {
+                            method: "POST",
+                            body: formData,
+                        });
+                        const data = await response.json();
+                        if (!response.ok || !data.ok) {
+                            throw new Error(data.error || "Resume impossible.");
+                        }
+                        const stats = `Pages lues: ${data.pages_scanned || 0} | Caracteres: ${data.characters || 0}`;
+                        pdfResult.textContent = `${data.summary}\n\n${stats}`;
+                    } catch (error) {
+                        pdfResult.textContent = `Erreur: ${error.message || "indisponible"}`;
+                    }
+                }
+
+                openBtn.addEventListener("click", openDrawer);
+                closeBtn.addEventListener("click", closeDrawer);
+                overlay.addEventListener("click", closeDrawer);
+
+                tabChat.addEventListener("click", () => setTab("chat"));
+                tabPdf.addEventListener("click", () => setTab("pdf"));
+
+                chatSend.addEventListener("click", sendChat);
+                chatInput.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        sendChat();
+                    }
+                });
+
+                pdfBtn.addEventListener("click", summarizePdf);
+
+                setTab("chat");
+                chatLog.innerHTML = "";
+                addMessage("assistant", "Salut. Pose-moi une question rapide ou utilise l'onglet Resume PDF.");
+            })();
+        </script>
+    {% endif %}
 </body>
 </html>

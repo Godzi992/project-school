@@ -4,6 +4,8 @@ import uuid
 import ipaddress
 import json
 import base64
+import urllib.error
+import urllib.request
 from io import BytesIO
 from datetime import datetime
 from xml.sax.saxutils import escape
@@ -21,26 +23,33 @@ try:
     from reportlab.lib.enums import TA_CENTER  # type: ignore[import-not-found]
     from reportlab.lib.pagesizes import A4  # type: ignore[import-not-found]
     from reportlab.lib.styles import ParagraphStyle  # type: ignore[import-not-found]
+    from reportlab.lib.utils import ImageReader  # type: ignore[import-not-found]
     from reportlab.pdfgen import canvas  # type: ignore[import-not-found]
-    from reportlab.platypus import BaseDocTemplate, Frame, KeepInFrame, PageTemplate, Paragraph, Spacer, Image as RLImage  # type: ignore[import-not-found]
+    from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, NextPageTemplate, PageTemplate, Paragraph, Spacer  # type: ignore[import-not-found]
 except ImportError:
     colors = None
     TA_CENTER = None
     A4 = None
     ParagraphStyle = None
+    ImageReader = None
     BaseDocTemplate = None
     Frame = None
-    KeepInFrame = None
+    KeepTogether = None
+    NextPageTemplate = None
     PageTemplate = None
     Paragraph = None
     Spacer = None
-    RLImage = None
     canvas = None
 
 try:
     import easyocr
 except ImportError:
     easyocr = None
+
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
@@ -573,7 +582,68 @@ DEFAULT_PDF_STUDIO_SETTINGS = {
     "subtitle_top_pct": 8.8,
     "content_left_pct": 7.2,
     "content_top_pct": 26.5,
+    "image_width_pct": 28.0,
+    "image_height_pct": 27.0,
+    "image_top_pct": 30.0,
 }
+
+
+DEFAULT_AI_AGENT_PROMPT = (
+    "Tu es un tuteur scolaire clair, patient et concret pour collegiens francophones.\n"
+    "Objectif: aider a comprendre le cours, resoudre des exercices et preparer les evaluations.\n"
+    "Regles:\n"
+    "- Explique en etapes simples avec un langage accessible.\n"
+    "- Donne un exemple court avant la methode generale.\n"
+    "- Si la question est floue, pose 1 question de precision max puis avance.\n"
+    "- Propose une mini verification finale (2-3 questions rapides).\n"
+    "- Evite le jargon inutile et les longues digressions.\n"
+    "- Quand il y a du calcul, detaille le raisonnement ligne par ligne.\n"
+    "Format de reponse recommande:\n"
+    "1) Idee cle\n2) Methode\n3) Exemple\n4) A toi de jouer"
+)
+
+AI_REMOTE_CHAT_ENDPOINT = "https://zentauri.swhome.lan/api/sessions/chat"
+
+
+def summarize_text_locally(raw_text: str, max_points: int = 6):
+    normalized = re.sub(r"\s+", " ", (raw_text or "").strip())
+    if not normalized:
+        return []
+
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", normalized) if s.strip()]
+    if not sentences:
+        return []
+
+    scored = []
+    for idx, sentence in enumerate(sentences):
+        length_score = min(len(sentence), 180)
+        keyword_bonus = 0
+        if re.search(r"\b(definition|important|essentiel|conclusion|resume|objectif|methode)\b", sentence, re.I):
+            keyword_bonus += 45
+        if re.search(r"\d", sentence):
+            keyword_bonus += 12
+        position_bonus = 20 if idx < 3 else 0
+        score = length_score + keyword_bonus + position_bonus
+        scored.append((score, idx, sentence))
+
+    top = sorted(scored, key=lambda item: item[0], reverse=True)[:max_points]
+    ordered = [item[2] for item in sorted(top, key=lambda item: item[1])]
+    return ordered
+
+
+def build_local_tutor_reply(question: str):
+    clean = (question or "").strip()
+    if not clean:
+        return "Je n'ai pas recu de question. Envoie une question precise et je te reponds en etapes."
+
+    short = clean[:220]
+    lines = [
+        "1) Idee cle: on va decouper le probleme en petites etapes.",
+        "2) Methode: identifie les donnees, choisis la regle, puis applique-la calmement.",
+        f"3) Exemple: si ta question est '{short}', commence par reformuler l'objectif en une phrase.",
+        "4) A toi de jouer: ecris ta premiere etape, puis verifie le resultat final.",
+    ]
+    return "\n".join(lines)
 
 
 def clamp_number(value, min_value: float, max_value: float, default: float):
@@ -617,6 +687,9 @@ def parse_pdf_studio_settings(raw_layout: str | None):
         payload.get("content_left_pct"), 4.0, 30.0, settings["content_left_pct"]
     )
     settings["content_top_pct"] = clamp_number(payload.get("content_top_pct"), 22.0, 70.0, settings["content_top_pct"])
+    settings["image_width_pct"] = clamp_number(payload.get("image_width_pct"), 18.0, 40.0, settings["image_width_pct"])
+    settings["image_height_pct"] = clamp_number(payload.get("image_height_pct"), 18.0, 46.0, settings["image_height_pct"])
+    settings["image_top_pct"] = clamp_number(payload.get("image_top_pct"), 18.0, 64.0, settings["image_top_pct"])
     return settings
 
 
@@ -635,13 +708,14 @@ def generate_stylish_pdf(
         or A4 is None
         or canvas is None
         or ParagraphStyle is None
+        or ImageReader is None
         or BaseDocTemplate is None
         or Frame is None
-        or KeepInFrame is None
+        or KeepTogether is None
+        or NextPageTemplate is None
         or PageTemplate is None
         or Paragraph is None
         or Spacer is None
-        or RLImage is None
     ):
         raise RuntimeError("ReportLab non disponible")
 
@@ -658,6 +732,33 @@ def generate_stylish_pdf(
         min(accent.green + 0.22, 1.0),
         min(accent.blue + 0.22, 1.0),
     )
+
+    map_image_reader = None
+    if mindmap_image_data.startswith("data:image/"):
+        image_bytes = None
+        try:
+            _, encoded = mindmap_image_data.split(",", 1)
+            image_bytes = base64.b64decode(encoded)
+        except (ValueError, base64.binascii.Error):
+            image_bytes = None
+
+        if image_bytes and len(image_bytes) <= 5_000_000:
+            try:
+                map_image_reader = ImageReader(BytesIO(image_bytes))
+            except Exception:
+                map_image_reader = None
+
+    has_side_image = map_image_reader is not None
+    sidebar_gap = 14
+    image_width_pct = clamp_number(settings.get("image_width_pct"), 18.0, 40.0, 28.0)
+    image_height_pct = clamp_number(settings.get("image_height_pct"), 18.0, 46.0, 27.0)
+    image_top_pct = clamp_number(settings.get("image_top_pct"), 18.0, 64.0, 30.0)
+
+    sidebar_width = 0
+    if has_side_image:
+        raw_sidebar_width = (image_width_pct / 100.0) * page_width
+        max_sidebar_width = max(120.0, page_width - (2 * margin) - sidebar_gap - 260.0)
+        sidebar_width = int(max(120.0, min(raw_sidebar_width, max_sidebar_width)))
 
     def draw_page_header(pdf_canvas, page_number: int):
         pdf_canvas.setFillColor(accent)
@@ -691,9 +792,29 @@ def generate_stylish_pdf(
         pdf_canvas.setFont("Helvetica", 9)
         footer = f"Cree par {author_name} - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         pdf_canvas.drawString(margin, 24, footer)
-        pdf_canvas.drawRightString(page_width - margin, 24, "EcoShare - PDF Studio")
+        pdf_canvas.drawRightString(page_width - margin, 24, "EcoShare - PDF Studio (prive)")
 
     content_top_px = (settings["content_top_pct"] / 100.0) * page_height
+
+    min_content_top_px = header_height + 155
+    safe_content_top_px = max(content_top_px, min_content_top_px)
+    first_frame_top_y = page_height - safe_content_top_px - 20
+    first_frame_x = margin
+    first_frame_width = page_width - (2 * margin) - (sidebar_width + sidebar_gap if has_side_image else 0)
+    first_frame_width = max(260, first_frame_width)
+    first_frame_height = max(165, first_frame_top_y - 46)
+
+    later_frame = Frame(
+        margin,
+        46,
+        page_width - (2 * margin),
+        page_height - 190,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+        id="later_frame",
+    )
 
     def draw_decorations(pdf_canvas, doc):
         draw_page_header(pdf_canvas, doc.page)
@@ -719,6 +840,41 @@ def generate_stylish_pdf(
             content_label_y = page_height - content_top_px + 12
             pdf_canvas.drawString(content_label_x, content_label_y, "Contenu")
 
+            if has_side_image and map_image_reader is not None:
+                panel_x = page_width - margin - sidebar_width
+                panel_h = int(max(120, min((image_height_pct / 100.0) * page_height, page_height * 0.46)))
+                desired_panel_y = (image_top_pct / 100.0) * page_height
+                panel_y = int(max(70, min(desired_panel_y, page_height - 70 - panel_h)))
+
+                pdf_canvas.setFillColor(colors.HexColor("#f8fafc"))
+                pdf_canvas.setStrokeColor(colors.HexColor("#d6dce5"))
+                pdf_canvas.roundRect(panel_x, panel_y, sidebar_width, panel_h, 8, stroke=1, fill=1)
+
+                try:
+                    img_w, img_h = map_image_reader.getSize()
+                    max_w = sidebar_width - 12
+                    max_h = panel_h - 34
+                    ratio = min(max_w / max(img_w, 1), max_h / max(img_h, 1))
+                    draw_w = max(1, img_w * ratio)
+                    draw_h = max(1, img_h * ratio)
+                    draw_x = panel_x + (sidebar_width - draw_w) / 2
+                    draw_y = panel_y + 18 + (max_h - draw_h) / 2
+                    pdf_canvas.drawImage(
+                        map_image_reader,
+                        draw_x,
+                        draw_y,
+                        width=draw_w,
+                        height=draw_h,
+                        preserveAspectRatio=True,
+                        mask="auto",
+                    )
+                except Exception:
+                    pass
+
+                pdf_canvas.setFillColor(colors.HexColor("#475569"))
+                pdf_canvas.setFont("Helvetica-Bold", 8)
+                pdf_canvas.drawCentredString(panel_x + (sidebar_width / 2), panel_y + 8, "Image de la carte")
+
     document = BaseDocTemplate(
         file_path,
         pagesize=A4,
@@ -729,17 +885,6 @@ def generate_stylish_pdf(
         topMargin=52,
         bottomMargin=46,
     )
-
-    min_content_top_px = header_height + 155
-    safe_content_top_px = max(content_top_px, min_content_top_px)
-    first_frame_top_y = page_height - safe_content_top_px - 20
-
-    desired_frame_width = page_width * 0.76
-    preferred_left = (settings["content_left_pct"] / 100.0) * page_width
-    max_left_for_width = page_width - margin - desired_frame_width
-    first_frame_x = max(24, min(max_left_for_width, preferred_left))
-    first_frame_width = desired_frame_width
-    first_frame_height = max(150, first_frame_top_y - 46)
 
     first_frame = Frame(
         first_frame_x,
@@ -752,20 +897,14 @@ def generate_stylish_pdf(
         bottomPadding=0,
         id="first_frame",
     )
-    later_frame = Frame(
-        margin,
-        46,
-        page_width - (2 * margin),
-        page_height - 190,
-        leftPadding=0,
-        rightPadding=0,
-        topPadding=0,
-        bottomPadding=0,
-        id="later_frame",
+    first_template = PageTemplate(
+        id="first",
+        frames=[first_frame],
+        onPage=draw_decorations,
+        autoNextPageTemplate="later",
     )
-
-    first_template = PageTemplate(id="first", frames=[first_frame], onPage=draw_decorations)
-    document.addPageTemplates([first_template])
+    later_template = PageTemplate(id="later", frames=[later_frame], onPage=draw_decorations)
+    document.addPageTemplates([first_template, later_template])
 
     body_style = ParagraphStyle(
         "BodyStyle",
@@ -774,6 +913,8 @@ def generate_stylish_pdf(
         leading=int(settings["body_font_size"]) + 4,
         textColor=colors.HexColor("#1f2a44"),
         spaceAfter=8,
+        allowWidows=0,
+        allowOrphans=0,
     )
 
     heading_style = ParagraphStyle(
@@ -813,33 +954,6 @@ def generate_stylish_pdf(
     content_blocks = parse_content_blocks(content)
     story = []
 
-    if mindmap_image_data.startswith("data:image/"):
-        image_bytes = None
-        try:
-            _, encoded = mindmap_image_data.split(",", 1)
-            image_bytes = base64.b64decode(encoded)
-        except (ValueError, base64.binascii.Error):
-            image_bytes = None
-
-        if image_bytes and len(image_bytes) <= 5_000_000:
-            try:
-                image_stream = BytesIO(image_bytes)
-                preview_image = RLImage(image_stream)
-                max_img_width = first_frame_width
-                max_img_height = min(220, first_frame_height * 0.38)
-                preview_image._restrictSize(max_img_width, max_img_height)
-                story.append(
-                    Paragraph(
-                        "<font color='#1f2a44'><b>Apercu de la carte mentale importee</b></font>",
-                        body_style,
-                    )
-                )
-                story.append(Spacer(1, 6))
-                story.append(preview_image)
-                story.append(Spacer(1, 10))
-            except Exception:
-                pass
-
     story.append(
         Paragraph(
             "<font color='#4f5b70'><i>Astuce: utilisez §texte§ ou **texte** pour le gras, *texte* pour l'italique et $...$ ou $$...$$ pour les formules.</i></font>",
@@ -855,26 +969,45 @@ def generate_stylish_pdf(
             continue
 
         if block_type == "heading":
-            story.append(Paragraph(render_custom_markup(text), heading_style))
-            story.append(Spacer(1, 2))
+            story.append(
+                KeepTogether([
+                    Paragraph(render_custom_markup(text), heading_style),
+                    Spacer(1, 2),
+                ])
+            )
             continue
 
         if block_type == "bullet":
-            story.append(Paragraph(f"• {render_custom_markup(text)}", bullet_style))
+            story.append(
+                KeepTogether([
+                    Paragraph(f"• {render_custom_markup(text)}", bullet_style),
+                    Spacer(1, 2),
+                ])
+            )
             continue
 
         if block_type == "math":
             readable_math = escape(latex_to_readable(text))
-            story.append(Paragraph(readable_math, math_style))
+            story.append(
+                KeepTogether([
+                    Paragraph(readable_math, math_style),
+                    Spacer(1, 4),
+                ])
+            )
             continue
 
-        story.append(Paragraph(render_custom_markup(text), body_style))
-        story.append(Spacer(1, 6))
+        story.append(
+            KeepTogether([
+                Paragraph(render_custom_markup(text), body_style),
+                Spacer(1, 6),
+            ])
+        )
 
-    single_page_story = [
-        KeepInFrame(first_frame_width, first_frame_height, story, mode="shrink")
-    ]
-    document.build(single_page_story)
+    if not story:
+        story.append(Paragraph("Contenu vide.", body_style))
+
+    story.insert(0, NextPageTemplate("later"))
+    document.build(story)
 
 
 def simulate_ecole_directe_import():
@@ -1303,6 +1436,7 @@ def create_stylish_pdf():
         subject = request.form.get("subject", "").strip()
         level = request.form.get("level", "").strip()
         body = request.form.get("body", "").strip()
+        post_action = request.form.get("post_action", "publish").strip().lower()
         theme = request.form.get("theme", "teal").strip()
         layout_json = request.form.get("layout_json", "")
         mindmap_image_data = request.form.get("mindmap_image_data", "").strip()
@@ -1338,12 +1472,27 @@ def create_stylish_pdf():
             mindmap_image_data=mindmap_image_data,
         )
 
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=f"{safe_title}.pdf",
-            mimetype="application/pdf",
+        resource = Resource(
+            filename=unique_name,
+            original_filename=f"{safe_title}.pdf",
+            filetype="pdf",
+            subject=subject,
+            level=level,
+            uploaded_by_id=current_user.id,
         )
+        db.session.add(resource)
+        db.session.commit()
+
+        if post_action == "download":
+            return send_file(
+                output_path,
+                as_attachment=True,
+                download_name=resource.original_filename,
+                mimetype="application/pdf",
+            )
+
+        flash("PDF publie sur l'accueil.", "success")
+        return redirect(url_for("index"))
 
     return render_template(
         "create_pdf.html",
@@ -1387,6 +1536,133 @@ def mindmap_studio():
         "mindmap_studio.html",
         published_payload=published_payload,
         published_meta=published_meta,
+    )
+
+
+@app.route("/ai-agent")
+@login_required
+def ai_agent_studio():
+    return render_template("ai_agent.html", default_ai_agent_prompt=DEFAULT_AI_AGENT_PROMPT)
+
+
+@app.route("/ai-helper/chat", methods=["POST"])
+@login_required
+def ai_helper_chat():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Payload invalide."}), 400
+
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        return jsonify({"ok": False, "error": "Ecris une question."}), 400
+
+    session_id = session.get("ai_helper_session_id")
+    if not session_id:
+        session_id = f"eco_{uuid.uuid4().hex[:12]}"
+        session["ai_helper_session_id"] = session_id
+
+    request_payload = {
+        "message": message,
+        "session_id": session_id,
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+        },
+        "meta": {
+            "source": "eco_share_help_widget",
+        },
+    }
+
+    try:
+        req = urllib.request.Request(
+            AI_REMOTE_CHAT_ENDPOINT,
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=18) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+
+        parsed = json.loads(raw) if raw else {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        answer = (
+            parsed.get("answer")
+            or parsed.get("message")
+            or parsed.get("content")
+            or (parsed.get("data") or {}).get("answer")
+            or (parsed.get("data") or {}).get("message")
+            or (parsed.get("result") or {}).get("answer")
+        )
+
+        if not answer:
+            answer = build_local_tutor_reply(message)
+
+        remote_session_id = (
+            parsed.get("session_id")
+            or (parsed.get("data") or {}).get("session_id")
+            or (parsed.get("result") or {}).get("session_id")
+        )
+        if remote_session_id:
+            session["ai_helper_session_id"] = str(remote_session_id)
+
+        return jsonify({"ok": True, "answer": str(answer)})
+
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        # Keep the helper usable even if remote API is temporarily unavailable.
+        answer = build_local_tutor_reply(message)
+        return jsonify({"ok": True, "answer": answer})
+
+
+@app.route("/ai-helper/summarize-pdf", methods=["POST"])
+@login_required
+def ai_helper_summarize_pdf():
+    pdf_file = request.files.get("pdf_file")
+    if not pdf_file or not pdf_file.filename:
+        return jsonify({"ok": False, "error": "Ajoute un fichier PDF."}), 400
+
+    filename = secure_filename(pdf_file.filename)
+    if not filename.lower().endswith(".pdf"):
+        return jsonify({"ok": False, "error": "Format invalide: PDF uniquement."}), 400
+
+    file_bytes = pdf_file.read()
+    if not file_bytes:
+        return jsonify({"ok": False, "error": "Le fichier est vide."}), 400
+    if len(file_bytes) > 12_000_000:
+        return jsonify({"ok": False, "error": "PDF trop lourd (max 12 MB)."}), 400
+
+    if PdfReader is None:
+        return jsonify({"ok": False, "error": "Module pypdf manquant. Installe pypdf pour activer le resume PDF."}), 503
+
+    try:
+        reader = PdfReader(BytesIO(file_bytes))
+        page_count = len(reader.pages)
+        chunks = []
+        max_pages = min(page_count, 24)
+        for i in range(max_pages):
+            text = (reader.pages[i].extract_text() or "").strip()
+            if text:
+                chunks.append(text)
+        extracted = "\n".join(chunks).strip()
+    except Exception:
+        return jsonify({"ok": False, "error": "Lecture du PDF impossible."}), 400
+
+    if not extracted:
+        return jsonify({"ok": False, "error": "Aucun texte detecte dans ce PDF."}), 400
+
+    bullets = summarize_text_locally(extracted, max_points=6)
+    if not bullets:
+        return jsonify({"ok": False, "error": "Resume impossible pour ce contenu."}), 400
+
+    summary_text = "\n".join([f"- {line}" for line in bullets])
+    return jsonify(
+        {
+            "ok": True,
+            "summary": summary_text,
+            "pages_scanned": min(len(reader.pages), 24),
+            "characters": len(extracted),
+        }
     )
 
 
